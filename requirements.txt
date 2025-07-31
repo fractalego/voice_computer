@@ -1,0 +1,24 @@
+# Core dependencies
+requests>=2.28.0
+pydantic>=2.0.0
+
+# Voice processing dependencies
+# Install Whisper for speech recognition:
+# pip install openai-whisper
+# or for faster performance: pip install faster-whisper
+
+# Optional: Audio processing (for advanced audio features)
+# numpy>=1.21.0
+# pyaudio>=0.2.11
+
+# MCP server dependencies (install as needed based on your use case)
+# For filesystem operations: pip install mcp-server-filesystem
+# For web search: pip install mcp-server-brave-search
+# For SQLite operations: pip install mcp-server-sqlite
+# For Git operations: pip install mcp-server-git
+
+# Text-to-Speech systems (system-dependent, install one):
+# Linux: sudo apt-get install espeak espeak-data
+# Linux: sudo apt-get install festival festival-dev
+# Linux: sudo apt-get install speech-dispatcher
+# macOS: Built-in 'say' command (no installation needed)

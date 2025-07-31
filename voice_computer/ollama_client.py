@@ -1,0 +1,153 @@
+"""
+Ollama client for communicating with Ollama API.
+"""
+
+import requests
+import json
+import logging
+from typing import Optional, List
+
+from .data_types import Messages, Tool, ClientResponse, ToolCall
+
+_logger = logging.getLogger(__name__)
+
+
+class OllamaConnectionError(Exception):
+    """Exception raised when there's a connection error to Ollama."""
+
+    def __init__(self, host: str, model: str, original_error: Exception):
+        self.host = host
+        self.model = model
+        self.original_error = original_error
+        super().__init__(
+            f"Failed to connect to Ollama at {host} for model '{model}': {original_error}"
+        )
+
+
+class OllamaResponseError(Exception):
+    """Exception raised when Ollama returns an error response."""
+
+    def __init__(self, host: str, model: str, status_code: int, response_text: str):
+        self.host = host
+        self.model = model
+        self.status_code = status_code
+        self.response_text = response_text
+        super().__init__(
+            f"Ollama error at {host} for model '{model}': HTTP {status_code} - {response_text}"
+        )
+
+
+class OllamaClient:
+    """Client for Ollama API."""
+
+    def __init__(
+        self,
+        model: str,
+        temperature: float = 0.4,
+        max_tokens: int = 2048,
+        host: str = "http://localhost:11434",
+    ):
+        self.model = model
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+        self.host = host
+
+        # Log Ollama connection details
+        _logger.info(f"Initializing OllamaClient for model '{model}' on host '{host}'")
+
+    async def predict(
+        self,
+        messages: Messages,
+        stop_sequences: Optional[List[str]] = None,
+        tools: Optional[List[Tool]] = None,
+    ) -> ClientResponse:
+        """
+        Make a prediction request to Ollama.
+        
+        Args:
+            messages: The conversation messages
+            stop_sequences: Optional list of stop sequences
+            tools: Optional list of tools available to the model
+            
+        Returns:
+            ClientResponse containing the response message and any tool calls
+        """
+        _logger.debug(
+            f"Making request to Ollama instance at {self.host} with model '{self.model}'"
+        )
+
+        headers = {"Content-Type": "application/json"}
+
+        # Convert tools to dict format for API if provided
+        tools_dict = None
+        if tools:
+            tools_dict = [tool.model_dump() for tool in tools]
+
+        data = {
+            "model": self.model,
+            "temperature": self.temperature,
+            "max_tokens": self.max_tokens,
+            "messages": messages.model_dump()["utterances"],
+            "options": {
+                "stop": stop_sequences,
+            },
+            "stream": False,
+            "tools": tools_dict,
+        }
+
+        try:
+            response = requests.post(
+                f"{self.host}/api/chat",
+                headers=headers,
+                data=json.dumps(data),
+                timeout=600,
+            )
+        except requests.exceptions.ConnectionError as e:
+            error_msg = f"Connection refused to Ollama at {self.host}. Please ensure Ollama is running and accessible."
+            _logger.error(error_msg)
+            raise OllamaConnectionError(self.host, self.model, e)
+        except requests.exceptions.Timeout as e:
+            error_msg = f"Timeout connecting to Ollama at {self.host}. The server may be overloaded or unreachable."
+            _logger.error(error_msg)
+            raise OllamaConnectionError(self.host, self.model, e)
+        except requests.exceptions.RequestException as e:
+            error_msg = f"Network error connecting to Ollama at {self.host}: {e}"
+            _logger.error(error_msg)
+            raise OllamaConnectionError(self.host, self.model, e)
+
+        if response.status_code == 200:
+            _logger.debug(f"Successfully received response from {self.host}")
+            try:
+                response_data = json.loads(response.text)
+
+                message_content = response_data["message"]["content"]
+
+                # Extract tool calls if present
+                tool_calls = None
+                if (
+                    "message" in response_data
+                    and "tool_calls" in response_data["message"]
+                ):
+                    tool_calls = []
+                    for tool_call_data in response_data["message"]["tool_calls"]:
+                        tool_call = ToolCall(
+                            id=tool_call_data.get("id", ""),
+                            type=tool_call_data.get("type", "function"),
+                            function=tool_call_data.get("function", {}),
+                        )
+                        tool_calls.append(tool_call)
+
+                return ClientResponse(message=message_content, tool_calls=tool_calls)
+            except (json.JSONDecodeError, KeyError) as e:
+                error_msg = f"Invalid response format from Ollama at {self.host}: {e}"
+                _logger.error(error_msg)
+                raise OllamaResponseError(
+                    self.host, self.model, response.status_code, str(e)
+                )
+        else:
+            _logger.error(
+                f"Error response from {self.host}: {response.status_code}, {response.text}"
+            )
+            raise OllamaResponseError(
+                self.host, self.model, response.status_code, response.text
+            )
