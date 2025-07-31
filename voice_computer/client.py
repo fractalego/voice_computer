@@ -10,7 +10,8 @@ from .voice_interface import VoiceInterface
 from .ollama_client import OllamaClient
 from .data_types import Messages, Utterance
 from .tool_agent import ToolAgent
-from .mcp_connector import MCPConnector
+from .mcp_connector import MCPStdioConnector
+from .config import Config
 
 _logger = logging.getLogger(__name__)
 
@@ -44,8 +45,8 @@ class SimpleConfig:
 class VoiceComputerClient:
     """Main voice computer client that coordinates all components."""
     
-    def __init__(self, config: Optional[SimpleConfig] = None):
-        self.config = config or SimpleConfig()
+    def __init__(self, config: Optional[Config] = None):
+        self.config = config or Config()
         
         # Initialize Ollama client
         self.ollama_client = OllamaClient(
@@ -69,10 +70,10 @@ class VoiceComputerClient:
         
         for server_config in mcp_servers:
             try:
-                connector = MCPConnector(
-                    server_name=server_config["name"],
-                    server_path=server_config["path"],
-                    server_args=server_config.get("args", [])
+                connector = MCPStdioConnector(
+                    command=server_config["path"],
+                    description=f"MCP server: {server_config['name']}",
+                    args=server_config.get("args", [])
                 )
                 
                 # Get tools asynchronously (we'll do this in the run method)
@@ -92,9 +93,9 @@ class VoiceComputerClient:
                 mcp_tools = await connector.get_tools()
                 if mcp_tools.tools:  # Only add if tools are available
                     tools.append(mcp_tools)
-                    _logger.info(f"Loaded {len(mcp_tools.tools)} tools from {mcp_tools.server_name}")
+                    _logger.info(f"Loaded {len(mcp_tools.tools)} tools from {mcp_tools.server_description}")
                 else:
-                    _logger.warning(f"No tools available from {mcp_tools.server_name}")
+                    _logger.warning(f"No tools available from {mcp_tools.server_description}")
             except Exception as e:
                 _logger.error(f"Failed to get tools from connector: {e}")
         

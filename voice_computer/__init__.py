@@ -10,7 +10,7 @@ from .client import VoiceComputerClient
 from .voice_interface import VoiceInterface
 from .whisper_listener import WhisperListener
 from .ollama_client import OllamaClient
-from .mcp_connector import MCPTools, MCPConnector, MCPStdioConnector
+from .mcp_connector import MCPTools, MCPStdioConnector
 from .data_types import Messages, Utterance, ClientResponse, ToolCall
 from .tool_agent import ToolAgent
 
@@ -21,7 +21,6 @@ __all__ = [
     "WhisperListener",
     "OllamaClient",
     "MCPTools",
-    "MCPConnector",
     "MCPStdioConnector",
     "Messages",
     "Utterance",

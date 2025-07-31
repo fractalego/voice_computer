@@ -11,7 +11,8 @@ Voice Computer is a voice-driven assistant that integrates Whisper speech recogn
 ## Development Commands
 
 ### Setup and Installation
-- **Install dependencies**: `pip install -r requirements.txt`
+- **Install dependencies**: `uv add <DEPENDENCY>`
+- **dependency file**: `pyproject.toml`
 
 
 ### Running the Application

@@ -13,6 +13,7 @@ pyaudio>=0.2.11
 # MCP server dependencies
 mcp>=1.0.0
 fastmcp>=0.1.0
+pydantic-ai>=0.2.18
 
 # Note: The old openai-whisper CLI approach has been replaced with direct transformers usage
 
