@@ -313,23 +313,6 @@ Logs are written to `voice_computer.log` by default. Use `--verbose` for detaile
 6. **LLM Processing**: Results processed via Ollama API
 7. **Speech Output**: Response spoken using system TTS (espeak/say)
 
-## 🚫 What Was Removed
-
-This refactor removed the `yaaaf` framework dependencies:
-
-- ❌ `yaaaf.components.*`
-- ❌ `yaaaf.connectors.*`  
-- ❌ `yaaaf.agents.*`
-- ❌ CLI-based Whisper approach
-- ❌ Deprecated `optimum.bettertransformer`
-
-✅ **Replaced with**: 
-- Self-contained `voice_computer` package
-- Direct Hugging Face Transformers integration
-- PyTorch optimization with model compilation
-- Logp-based hotword detection
-- Real-time audio processing
-
 ## 🤝 Contributing
 
 1. All functionality is now in the `voice_computer/` directory
