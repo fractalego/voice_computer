@@ -340,7 +340,7 @@ This refactor removed the `yaaaf` framework dependencies:
 
 ## 📄 License
 
-[Your license here]
+MIT license. See `license.txt` file for details.
 
 ---
 
