@@ -7,6 +7,7 @@ import logging
 import subprocess
 import tempfile
 import os
+from pathlib import Path
 from typing import Optional
 
 from .whisper_listener import WhisperListener
@@ -30,9 +31,30 @@ class VoiceInterface:
         self._waking_up_sound = True
         self._deactivate_sound = True
         
+        # Set up sound file paths
+        sounds_dir = Path(__file__).parent / "sounds"
+        self._activation_sound_path = sounds_dir / "activation.wav"
+        self._deactivation_sound_path = sounds_dir / "deactivation.wav"
+        self._deny_sound_path = sounds_dir / "deny.wav"
+        
         if config:
             self._waking_up_sound = config.get_value("waking_up_sound") or True
             self._deactivate_sound = config.get_value("deactivate_sound") or True
+            
+            # Set up activation hotwords
+            activation_hotwords = config.get_value("activation_hotwords")
+            if activation_hotwords:
+                self._listener.set_hotwords(activation_hotwords)
+                _logger.info(f"Activation hotwords configured: {activation_hotwords}")
+            else:
+                # Default hotword
+                self._listener.set_hotwords(["computer"])
+                _logger.info("Using default activation hotword: computer")
+        
+        # Verify sound files exist
+        for sound_file in [self._activation_sound_path, self._deactivation_sound_path]:
+            if not sound_file.exists():
+                _logger.warning(f"Sound file not found: {sound_file}")
 
     def add_hotwords(self, hotwords):
         """Add hotwords to the listener."""
@@ -164,31 +186,49 @@ class VoiceInterface:
 
     async def _play_activation_sound(self) -> None:
         """Play activation sound."""
-        await self._play_system_sound("activation")
+        if self._activation_sound_path.exists():
+            await self._play_sound_file(self._activation_sound_path)
+        else:
+            _logger.warning("Activation sound file not found")
 
     async def _play_deactivation_sound(self) -> None:
         """Play deactivation sound."""
-        await self._play_system_sound("deactivation")
+        if self._deactivation_sound_path.exists():
+            await self._play_sound_file(self._deactivation_sound_path)
+        else:
+            _logger.warning("Deactivation sound file not found")
 
-    async def _play_system_sound(self, sound_type: str) -> None:
+    async def _play_deny_sound(self) -> None:
+        """Play deny/error sound."""
+        if self._deny_sound_path.exists():
+            await self._play_sound_file(self._deny_sound_path)
+        else:
+            _logger.warning("Deny sound file not found")
+
+    async def _play_sound_file(self, sound_file_path: Path) -> None:
         """
-        Play a system sound.
+        Play a specific sound file using available audio players.
         """
         try:
-            # Try different sound playing commands
-            sound_commands = [
+            sound_file_str = str(sound_file_path)
+            
+            # Try different audio players in order of preference
+            audio_players = [
                 # macOS
-                ['afplay', '/System/Library/Sounds/Glass.aiff'],
-                # Linux with aplay
-                ['aplay', '/usr/share/sounds/alsa/Front_Left.wav'],
-                # Linux with paplay
-                ['paplay', '/usr/share/sounds/alsa/Front_Left.wav'],
-                # Generic beep
-                ['beep'],
+                ['afplay', sound_file_str],
+                # Linux with aplay (ALSA)
+                ['aplay', sound_file_str],
+                # Linux with paplay (PulseAudio)
+                ['paplay', sound_file_str],
+                # Cross-platform with ffplay (if available)
+                ['ffplay', '-nodisp', '-autoexit', sound_file_str],
+                # Cross-platform with mpv (if available)
+                ['mpv', '--no-video', '--quiet', sound_file_str],
             ]
 
-            for cmd in sound_commands:
+            for cmd in audio_players:
                 try:
+                    _logger.debug(f"Trying audio command: {' '.join(cmd)}")
                     process = await asyncio.create_subprocess_exec(
                         *cmd,
                         stdout=asyncio.subprocess.DEVNULL,
@@ -197,18 +237,22 @@ class VoiceInterface:
                     await process.wait()
                     
                     if process.returncode == 0:
+                        _logger.debug(f"Successfully played sound: {sound_file_path}")
                         return
                         
                 except FileNotFoundError:
+                    _logger.debug(f"Audio player not found: {cmd[0]}")
                     continue
-                except Exception:
+                except Exception as e:
+                    _logger.debug(f"Audio player failed: {cmd[0]} - {e}")
                     continue
 
-            # If no sound command works, just log
-            _logger.debug(f"No working sound command found for {sound_type}")
+            # If no audio player works, log warning
+            _logger.warning(f"No working audio player found to play: {sound_file_path}")
+            _logger.info("Install an audio player: sudo apt-get install alsa-utils pulseaudio-utils (Linux) or use macOS/Windows built-in players")
             
         except Exception as e:
-            _logger.debug(f"Error playing {sound_type} sound: {e}")
+            _logger.error(f"Error playing sound file {sound_file_path}: {e}")
 
     def _remove_activation_word_and_normalize(self, text: str) -> str:
         """Remove activation words and normalize text."""

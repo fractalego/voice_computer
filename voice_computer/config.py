@@ -19,18 +19,28 @@ class Config:
             # Voice interface settings
             "listener_model": {
                 "listener_silence_timeout": 2,      # seconds of silence before stopping recording
-                "listener_volume_threshold": 1,     # minimum volume to trigger recording
+                "listener_volume_threshold": 0.6,   # minimum volume to trigger recording
                 "listener_hotword_logp": -8         # hotword detection threshold
             },
+            "activation_hotwords": ["computer"],    # default activation hotwords
             "waking_up_sound": True,                # play sound when activating
             "deactivate_sound": True,               # play sound when deactivating
+            
+            # Whisper model settings
+            "whisper_model": "fractalego/personal-whisper-distilled-model",  # Hugging Face model ID
             
             # Ollama settings
             "ollama_host": "http://localhost:11434",
             "ollama_model": "qwen2.5:32b",          # or any model you have in Ollama
             
             # MCP servers configuration
-            "mcp_servers": []
+            "mcp_servers": [
+                {
+                    "name": "default",
+                    "path": "python",
+                    "args": ["-m", "voice_computer.default_mcp_server"]
+                }
+            ]
         }
     
     def get_value(self, key: str) -> Any:
@@ -53,35 +63,26 @@ class ExampleConfig(Config):
         """Get default configuration with example MCP servers."""
         config = super()._get_default_config()
         
+        # Add whisper model
+        config["whisper_model"] = "fractalego/personal-whisper-distilled-model"
+        
+        # Add default activation hotwords
+        config["activation_hotwords"] = ["computer"]
+        
         # Add example MCP servers
         config["mcp_servers"] = [
-            # Filesystem MCP server example
+            # Default stdio MCP server
             {
-                "name": "filesystem",
-                "path": "mcp-server-filesystem",
-                "args": ["--root", "/tmp"]
+                "name": "default",
+                "path": "python",
+                "args": ["-m", "voice_computer.default_mcp_server"]
             },
-            
-            # Web search MCP server example (requires API key)
+            # Filesystem MCP server example (commented out)
             # {
-            #     "name": "brave-search",
-            #     "path": "mcp-server-brave-search", 
-            #     "args": ["--api-key", "YOUR_BRAVE_API_KEY"]
+            #     "name": "filesystem",
+            #     "path": "mcp-server-filesystem",
+            #     "args": ["--root", "/tmp"]
             # },
-            
-            # SQLite MCP server example
-            # {
-            #     "name": "sqlite",
-            #     "path": "mcp-server-sqlite",
-            #     "args": ["--db", "/path/to/your/database.db"]
-            # },
-            
-            # Git MCP server example
-            # {
-            #     "name": "git",
-            #     "path": "mcp-server-git",
-            #     "args": ["--repository", "/path/to/your/repo"]
-            # }
         ]
         
         return config
@@ -117,18 +118,20 @@ def create_example_config_file(path: str) -> None:
     example_config = {
         "listener_model": {
             "listener_silence_timeout": 2,
-            "listener_volume_threshold": 1,
+            "listener_volume_threshold": 0.6,
             "listener_hotword_logp": -8
         },
+        "activation_hotwords": ["computer"],
         "waking_up_sound": True,
         "deactivate_sound": True,
+        "whisper_model": "fractalego/personal-whisper-distilled-model",
         "ollama_host": "http://localhost:11434",
         "ollama_model": "qwen2.5:32b",
         "mcp_servers": [
             {
-                "name": "filesystem",
-                "path": "mcp-server-filesystem",
-                "args": ["--root", "/tmp"]
+                "name": "default",
+                "path": "python",
+                "args": ["-m", "voice_computer.default_mcp_server"]
             }
         ]
     }

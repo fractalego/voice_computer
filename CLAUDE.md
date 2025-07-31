@@ -103,9 +103,20 @@ Voice Computer is a voice-driven assistant that integrates Whisper speech recogn
 
 ## Configuration Examples
 
-### Basic Filesystem MCP Server (JSON config)
+### Basic Configuration (JSON config)
 ```json
 {
+  "listener_model": {
+    "listener_silence_timeout": 2,
+    "listener_volume_threshold": 0.6,
+    "listener_hotword_logp": -8
+  },
+  "activation_hotwords": ["computer"],
+  "waking_up_sound": true,
+  "deactivate_sound": true,
+  "whisper_model": "fractalego/personal-whisper-distilled-model",
+  "ollama_host": "http://localhost:11434",
+  "ollama_model": "qwen2.5:32b",
   "mcp_servers": [
     {
       "name": "filesystem",

@@ -52,10 +52,33 @@ class MCPTools(BaseModel):
         This implementation uses subprocess to call MCP servers directly.
         """
         try:
-            # Prepare the MCP call
-            mcp_request = {
+            # Prepare the initialization request first
+            init_request = {
                 "jsonrpc": "2.0",
                 "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {
+                        "tools": {}
+                    },
+                    "clientInfo": {
+                        "name": "voice-computer",
+                        "version": "1.0.0"
+                    }
+                }
+            }
+            
+            # Prepare the initialized notification
+            initialized_notification = {
+                "jsonrpc": "2.0",
+                "method": "notifications/initialized"
+            }
+            
+            # Prepare the tool call request
+            tool_request = {
+                "jsonrpc": "2.0",
+                "id": 2,
                 "method": "tools/call",
                 "params": {
                     "name": tool_name,
@@ -72,24 +95,51 @@ class MCPTools(BaseModel):
                 stderr=asyncio.subprocess.PIPE
             )
             
-            # Send the request
-            request_data = json.dumps(mcp_request) + "\n"
+            # Send initialization, notification, and tool call requests
+            init_data = json.dumps(init_request) + "\n"
+            notification_data = json.dumps(initialized_notification) + "\n"
+            tool_data = json.dumps(tool_request) + "\n"
+            request_data = init_data + notification_data + tool_data
+            
             stdout, stderr = await process.communicate(request_data.encode())
             
             if process.returncode != 0:
                 _logger.error(f"MCP server exited with code {process.returncode}: {stderr.decode()}")
                 return f"Error: MCP server failed with exit code {process.returncode}"
             
-            # Parse the response
+            # Parse the responses (expecting two JSON-RPC responses)
             response_text = stdout.decode().strip()
             if response_text:
-                response = json.loads(response_text)
-                if "result" in response:
-                    return response["result"]["content"]
-                elif "error" in response:
-                    return f"Error: {response['error']['message']}"
+                lines = response_text.split('\n')
+                # Look for the tool call response (id=2)
+                for line in lines:
+                    if line.strip():
+                        try:
+                            response = json.loads(line)
+                            if response.get("id") == 2:  # Tool call response
+                                if "result" in response:
+                                    result = response["result"]
+                                    if isinstance(result, dict):
+                                        # Check for structured content first
+                                        if "structuredContent" in result:
+                                            return str(result["structuredContent"])
+                                        # Then check for content array
+                                        elif "content" in result and isinstance(result["content"], list) and len(result["content"]) > 0:
+                                            content_item = result["content"][0]
+                                            if isinstance(content_item, dict) and "text" in content_item:
+                                                return content_item["text"]
+                                            else:
+                                                return str(content_item)
+                                        else:
+                                            return str(result)
+                                    else:
+                                        return str(result)
+                                elif "error" in response:
+                                    return f"Error: {response['error']['message']}"
+                        except json.JSONDecodeError:
+                            continue
             
-            return "No response from MCP server"
+            return "No valid response from MCP server"
             
         except Exception as e:
             _logger.error(f"Error calling MCP tool {tool_name}: {e}")
@@ -123,7 +173,22 @@ class MCPConnector:
             # For now, return some common tools based on server type
             tools = []
             
-            if "filesystem" in self.server_name.lower():
+            if "default" in self.server_name.lower():
+                tools = [
+                    ToolDescription(
+                        name="add_two_numbers",
+                        description="Calculate the sum of two integers",
+                        inputSchema={
+                            "type": "object", 
+                            "properties": {
+                                "lhs": {"type": "integer"}, 
+                                "rhs": {"type": "integer"}
+                            }, 
+                            "required": ["lhs", "rhs"]
+                        }
+                    )
+                ]
+            elif "filesystem" in self.server_name.lower():
                 tools = [
                     ToolDescription(
                         name="read_file",

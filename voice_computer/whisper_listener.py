@@ -1,32 +1,119 @@
 """
-Simplified Whisper-based speech recognition listener.
+Whisper-based speech recognition using local serving based on WhisperHandler.
 """
 
 import asyncio
 import logging
-import subprocess
-import tempfile
-import os
-from typing import Optional
+import numpy as np
+import pyaudio
+import time
+import torch
+from typing import Optional, List
+
+import torch._dynamo
+torch._dynamo.config.suppress_errors = True
+
+from transformers import WhisperProcessor, WhisperForConditionalGeneration
 
 _logger = logging.getLogger(__name__)
 
 
 class WhisperListener:
-    """Simplified Whisper listener that uses the whisper command-line tool."""
+    """Whisper listener using local serving with logp-based hotword detection."""
     
     def __init__(self, config=None):
         self.config = config
         self.is_active = False
-        self.timeout = 2
-        self.volume_threshold = 1
-        self.hotword_threshold = -8
         
+        # Audio settings
+        self.chunk = 1024
+        self.format = pyaudio.paInt16
+        self.channels = 1
+        self.rate = 16000
+        self.range = 32768
+        
+        # Voice activity detection settings
+        self.timeout = 2
+        self.volume_threshold = 0.6  # Updated default
+        self.original_volume_threshold = self.volume_threshold
+        self.max_timeout = 4
+        self.hotword_threshold = -8  # logp threshold for hotword detection
+        
+        # Load configuration
         if config:
             listener_config = config.get_value("listener_model") or {}
             self.timeout = listener_config.get("listener_silence_timeout", 2)
-            self.volume_threshold = listener_config.get("listener_volume_threshold", 1)
+            self.volume_threshold = listener_config.get("listener_volume_threshold", 0.6)
+            self.original_volume_threshold = self.volume_threshold
             self.hotword_threshold = listener_config.get("listener_hotword_logp", -8)
+        
+        # Whisper model settings
+        self.whisper_model_name = "fractalego/personal-whisper-distilled-model"
+        if config:
+            self.whisper_model_name = config.get_value("whisper_model") or self.whisper_model_name
+        
+        # Initialize PyAudio
+        self.p = pyaudio.PyAudio()
+        self.stream = None
+        
+        # Whisper components (loaded lazily)
+        self.processor = None
+        self.model = None
+        self.device = None
+        self.initialized = False
+        self.hotwords = []
+        self.last_audio = None
+        
+        # Whisper tokenizer tokens
+        self._starting_tokens = None
+        self._ending_tokens = None
+        
+        _logger.info(f"WhisperListener initialized with model: {self.whisper_model_name}")
+
+    def _initialize_whisper(self):
+        """Initialize the Whisper model and processor (adapted from WhisperHandler)."""
+        if self.initialized:
+            return
+        
+        try:
+            _logger.info(f"Loading Whisper model: {self.whisper_model_name}")
+            
+            # Determine device
+            self.device = "cuda" if torch.cuda.is_available() else "cpu"
+            _logger.info(f"Using device: {self.device}")
+            
+            # Load processor and model
+            self.processor = WhisperProcessor.from_pretrained(self.whisper_model_name)
+            self.model = WhisperForConditionalGeneration.from_pretrained(self.whisper_model_name)
+            
+            # Setup tokenizer tokens
+            self._starting_tokens = self.processor.tokenizer.convert_tokens_to_ids(
+                ["<|startoftranscript|>", "<|notimestamps|>"]
+            )
+            self._ending_tokens = self.processor.tokenizer.convert_tokens_to_ids(
+                ["<|endoftext|>"]
+            )
+            
+            # Move model to device and optimize
+            self.model = self.model.to(self.device)
+            
+            # Use half precision for better performance (if using CUDA)
+            if self.device == "cuda":
+                self.model = self.model.half()
+            
+            # Compile model for better performance (PyTorch 2.0+)
+            try:
+                self.model = torch.compile(self.model, mode="reduce-overhead")
+                _logger.info("Model compiled successfully")
+            except Exception as e:
+                _logger.warning(f"Model compilation failed, continuing without: {e}")
+            
+            self.initialized = True
+            _logger.info("Whisper model loaded and optimized successfully")
+            
+        except Exception as e:
+            _logger.error(f"Failed to initialize Whisper model: {e}")
+            raise RuntimeError(f"Could not initialize Whisper model '{self.whisper_model_name}': {e}")
 
     def set_timeout(self, timeout: float):
         """Set the silence timeout."""
@@ -35,161 +122,335 @@ class WhisperListener:
     def set_volume_threshold(self, threshold: float):
         """Set the volume threshold."""
         self.volume_threshold = threshold
+        self.original_volume_threshold = threshold
 
     def set_hotword_threshold(self, threshold: float):
-        """Set the hotword detection threshold."""
+        """Set the hotword detection threshold (logp)."""
         self.hotword_threshold = threshold
 
-    def add_hotwords(self, hotwords):
-        """Add hotwords for detection (simplified implementation)."""
+    def set_hotwords(self, hotwords):
+        """Set hotwords for detection."""
         if hotwords:
-            _logger.info(f"Hotwords configured: {hotwords}")
+            self.hotwords = [word.lower() for word in hotwords]
+            _logger.info(f"Set hotwords: {self.hotwords}")
+
+    def add_hotwords(self, hotwords):
+        """Add hotwords for detection."""
+        if hotwords and not isinstance(hotwords, list):
+            hotwords = [hotwords]
+        
+        if hotwords:
+            new_hotwords = [word.lower() for word in hotwords]
+            self.hotwords.extend(new_hotwords)
+            _logger.info(f"Added hotwords: {new_hotwords}")
 
     def activate(self):
-        """Activate the listener."""
-        self.is_active = True
-        _logger.debug("WhisperListener activated")
+        """Activate the audio stream."""
+        if not self.is_active:
+            try:
+                self.stream = self.p.open(
+                    format=self.format,
+                    channels=self.channels,
+                    rate=self.rate,
+                    input=True,
+                    output=False,
+                    frames_per_buffer=self.chunk,
+                )
+                self.is_active = True
+                _logger.debug("WhisperListener audio stream activated")
+            except Exception as e:
+                _logger.error(f"Failed to activate audio stream: {e}")
+                raise
 
     def deactivate(self):
-        """Deactivate the listener."""
-        self.is_active = False
-        _logger.debug("WhisperListener deactivated")
+        """Deactivate the audio stream."""
+        if self.is_active and self.stream:
+            try:
+                self.stream.stop_stream()
+                self.stream.close()
+                self.is_active = False
+                _logger.debug("WhisperListener audio stream deactivated")
+            except Exception as e:
+                _logger.error(f"Error deactivating audio stream: {e}")
+
+    def _rms(self, frame):
+        """Calculate RMS (root mean square) of audio frame."""
+        try:
+            data = np.frombuffer(frame, dtype=np.int16)
+            if len(data) == 0:
+                return 0.0
+            
+            # Calculate mean square, ensuring no overflow
+            mean_square = np.mean(data.astype(np.float64)**2)
+            
+            # Ensure non-negative value before sqrt
+            if mean_square < 0:
+                return 0.0
+            
+            rms = np.sqrt(mean_square) / self.range
+            
+            # Handle NaN or infinite values
+            if not np.isfinite(rms):
+                return 0.0
+                
+            return float(rms)
+            
+        except Exception as e:
+            _logger.debug(f"Error calculating RMS: {e}")
+            return 0.0
+
+    def _record_audio(self, start_with):
+        """Record audio starting with the given frame."""
+        rec = [start_with]
+        
+        current = time.time()
+        end = time.time() + self.timeout
+        upper_limit_end = time.time() + self.max_timeout
+
+        while current <= end and current < upper_limit_end:
+            try:
+                data = self.stream.read(self.chunk, exception_on_overflow=False)
+                if self._rms(data) >= self.volume_threshold:
+                    end = time.time() + self.timeout
+
+                current = time.time()
+                rec.append(data)
+            except Exception as e:
+                _logger.warning(f"Error reading audio data: {e}")
+                break
+
+        # Convert to numpy array and normalize
+        try:
+            audio_bytes = b"".join(rec)
+            if len(audio_bytes) == 0:
+                return np.array([], dtype=np.float32)
+            
+            audio_data = np.frombuffer(audio_bytes, dtype=np.int16)
+            if len(audio_data) == 0:
+                return np.array([], dtype=np.float32)
+            
+            # Normalize to float32 in range [-1, 1]
+            normalized = audio_data.astype(np.float32) / self.range
+            
+            # Clip to valid range to prevent overflow issues
+            normalized = np.clip(normalized, -1.0, 1.0)
+            
+            return normalized
+            
+        except Exception as e:
+            _logger.warning(f"Error processing audio data: {e}")
+            return np.array([], dtype=np.float32)
 
     async def input(self) -> str:
-        """
-        Get voice input and return transcribed text.
-        
-        This is a simplified implementation that uses the system's
-        audio recording capabilities and Whisper for transcription.
-        """
+        """Get voice input and return transcribed text."""
         if not self.is_active:
             self.activate()
 
-        try:
-            # Record audio using system tools
-            audio_file = await self._record_audio()
+        # Initialize Whisper model if not already done
+        self._initialize_whisper()
+
+        while True:
+            await asyncio.sleep(0.01)  # Small sleep to prevent blocking
             
-            if audio_file and os.path.exists(audio_file):
-                # Transcribe using Whisper
-                text = await self._transcribe_audio(audio_file)
-                
-                # Clean up temporary file
-                try:
-                    os.unlink(audio_file)
-                except OSError:
-                    pass
-                
-                return text or "[unclear]"
-            else:
-                return "[unclear]"
-                
-        except Exception as e:
-            _logger.error(f"Error during voice input: {e}")
-            return "[unclear]"
+            try:
+                # Read initial chunk
+                inp = self.stream.read(self.chunk, exception_on_overflow=False)
+            except Exception as e:
+                _logger.warning(f"Error reading audio: {e}")
+                # Try to reactivate stream
+                self.deactivate()
+                self.activate()
+                continue
 
-    async def _record_audio(self) -> Optional[str]:
-        """
-        Record audio using system recording tools.
-        Returns path to recorded audio file.
-        """
-        try:
-            # Create temporary file for audio
-            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_file:
-                audio_file = temp_file.name
-
-            # Try different recording methods based on available tools
-            recording_commands = [
-                # macOS
-                ['rec', audio_file, 'silence', '1', '0.1', '2%', '1', '2.0', '2%'],
-                # Linux with ALSA
-                ['arecord', '-f', 'cd', '-t', 'wav', '-d', str(self.timeout), audio_file],
-                # Linux with PulseAudio
-                ['parecord', '--format=s16le', '--rate=44100', '--channels=1', f'--record-time={self.timeout}', audio_file],
-            ]
-
-            for cmd in recording_commands:
-                try:
-                    _logger.debug(f"Trying recording command: {' '.join(cmd)}")
-                    process = await asyncio.create_subprocess_exec(
-                        *cmd,
-                        stdout=asyncio.subprocess.DEVNULL,
-                        stderr=asyncio.subprocess.DEVNULL
-                    )
-                    await process.wait()
-                    
-                    if process.returncode == 0 and os.path.exists(audio_file):
-                        _logger.debug(f"Successfully recorded audio to {audio_file}")
-                        return audio_file
-                        
-                except FileNotFoundError:
+            rms_val = self._rms(inp)
+            
+            if rms_val > self.volume_threshold:
+                # Record full audio
+                audio_data = self._record_audio(start_with=inp)
+                
+                # Check if we got valid audio data
+                if len(audio_data) == 0:
                     continue
-                except Exception as e:
-                    _logger.debug(f"Recording command failed: {e}")
-                    continue
+                    
+                self.last_audio = audio_data
+                
+                # Transcribe audio
+                result = await self._process_audio(audio_data)
+                
+                if result and result.get("transcription"):
+                    transcription = result["transcription"].strip()
+                    if transcription and transcription.lower() != "[unclear]":
+                        return transcription
+            else:
+                # Adjust threshold based on ambient noise
+                new_threshold = 2 * rms_val
+                self.volume_threshold = max(new_threshold, self.original_volume_threshold)
 
-            _logger.warning("No working audio recording command found")
-            return None
-
-        except Exception as e:
-            _logger.error(f"Error recording audio: {e}")
-            return None
-
-    async def _transcribe_audio(self, audio_file: str) -> Optional[str]:
+    async def _process_audio(self, waveform: np.ndarray, hotword: Optional[str] = None) -> dict:
         """
-        Transcribe audio file using Whisper.
+        Process audio waveform and return transcription with optional hotword logp.
+        Adapted from WhisperHandler's preprocess, inference, and postprocess methods.
         """
         try:
-            # Try using whisper command-line tool
-            cmd = ['whisper', audio_file, '--output_format', 'txt', '--output_dir', '/tmp']
-            
-            _logger.debug(f"Running whisper command: {' '.join(cmd)}")
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            
-            stdout, stderr = await process.communicate()
-            
-            if process.returncode == 0:
-                # Find the output text file
-                base_name = os.path.splitext(os.path.basename(audio_file))[0]
-                txt_file = f"/tmp/{base_name}.txt"
-                
-                if os.path.exists(txt_file):
-                    with open(txt_file, 'r', encoding='utf-8') as f:
-                        text = f.read().strip()
-                    
-                    # Clean up text file
-                    try:
-                        os.unlink(txt_file)
-                    except OSError:
-                        pass
-                    
-                    _logger.debug(f"Transcribed text: {text}")
-                    return text
-            else:
-                _logger.error(f"Whisper command failed: {stderr.decode()}")
-                
-        except FileNotFoundError:
-            _logger.error("Whisper command not found. Please install openai-whisper: pip install openai-whisper")
+            # Run processing in thread pool to avoid blocking
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, self._process_audio_sync, waveform, hotword)
+            return result
         except Exception as e:
-            _logger.error(f"Error transcribing audio: {e}")
+            _logger.error(f"Error processing audio: {e}")
+            return {"transcription": "[unclear]", "score": 0.0, "logp": None}
 
-        return None
+    def _process_audio_sync(self, waveform: np.ndarray, hotword: Optional[str] = None) -> dict:
+        """Synchronous audio processing (adapted from WhisperHandler)."""
+        try:
+            # Check for valid audio input
+            if len(waveform) == 0:
+                return {"transcription": "[unclear]", "score": 0.0, "logp": None}
+            
+            # Check for valid audio values
+            if not np.isfinite(waveform).all():
+                _logger.warning("Audio contains invalid values, cleaning...")
+                waveform = np.nan_to_num(waveform, nan=0.0, posinf=0.0, neginf=0.0)
+            
+            # Preprocess (adapted from WhisperHandler.preprocess)
+            input_features = self.processor(
+                audio=waveform, 
+                return_tensors="pt", 
+                sampling_rate=16000
+            ).input_features
+            
+            hotword_tokens = None
+            if hotword:
+                hotword_tokens = torch.tensor(
+                    [
+                        item
+                        for item in self.processor.tokenizer.encode(f" {hotword}")
+                        if item not in set(self._ending_tokens + self._starting_tokens)
+                    ],
+                    dtype=torch.int,
+                ).unsqueeze(0)
+
+            # Prepare processed data with proper tensor handling
+            input_features = input_features.to(self.device)
+            if self.device == "cuda":
+                input_features = input_features.half()
+            
+            processed_hotword_tokens = None
+            if hotword_tokens is not None:
+                processed_hotword_tokens = hotword_tokens.to(self.device)
+                # Don't apply half() to integer tensors
+            
+            processed_data = {
+                "input_features": input_features,
+                "num_beams": 1,  # Default beam search
+                "num_tokens": 448,  # Default max tokens
+                "hotword_tokens": processed_hotword_tokens,
+            }
+            
+            # Inference (adapted from WhisperHandler.inference)
+            with torch.no_grad():
+                input_features = processed_data["input_features"]
+                num_beams = processed_data["num_beams"]
+                num_tokens = processed_data["num_tokens"]
+                hotword_tokens = processed_data["hotword_tokens"]
+                
+                output = self.model.generate(
+                    input_features,
+                    num_beams=num_beams,
+                    return_dict_in_generate=True,
+                    output_scores=True,
+                    max_length=num_tokens,
+                )
+                
+                transcription = self.processor.batch_decode(
+                    output.sequences, skip_special_tokens=True
+                )[0]
+                score = output.sequences_scores
+                logp = None
+                
+                if hotword_tokens is not None:
+                    logp = self._compute_logp(hotword_tokens, input_features)
+
+                return {
+                    "transcription": transcription,
+                    "score": float(score),
+                    "logp": float(logp) if logp is not None else None,
+                }
+                
+        except Exception as e:
+            _logger.error(f"Error in synchronous audio processing: {e}")
+            return {"transcription": "[unclear]", "score": 0.0, "logp": None}
+
+    def _compute_logp(self, hotword_tokens, input_features):
+        """
+        Compute log probability for hotword detection.
+        Adapted from WhisperHandler.compute_logp method.
+        """
+        try:
+            input_ids = torch.tensor([self._starting_tokens]).to(self.device)
+            
+            for _ in range(hotword_tokens.shape[1]):
+                logits = self.model(
+                    input_features,
+                    decoder_input_ids=input_ids,
+                ).logits
+                new_token = torch.argmax(logits, dim=-1)
+                new_token = torch.tensor([[new_token[:, -1]]]).to(self.device)
+                input_ids = torch.cat([input_ids, new_token], dim=-1)
+
+            logprobs = torch.log(torch.softmax(logits, dim=-1))
+            sum_logp = 0
+            for logp, index in zip(logprobs[0][1:], hotword_tokens[0]):
+                sum_logp += logp[int(index)]
+
+            return sum_logp
+            
+        except Exception as e:
+            _logger.error(f"Error computing logp: {e}")
+            return None
 
     async def get_hotword_if_present(self) -> str:
         """
-        Check if a hotword is present (simplified implementation).
+        Check if any hotword is present in the last audio using logp threshold.
         """
-        # This is a placeholder - in a real implementation,
-        # you would analyze the audio for hotwords
+        if not self.hotwords or self.last_audio is None:
+            return ""
+        
+        for hotword in self.hotwords:
+            if await self.hotword_is_present(hotword):
+                return hotword
+        
         return ""
 
     async def hotword_is_present(self, hotword: str) -> bool:
         """
-        Check if a specific hotword is present (simplified implementation).
+        Check if a specific hotword is present using logp threshold.
+        This uses the actual logp computation from WhisperHandler.
         """
-        # This is a placeholder - in a real implementation,
-        # you would analyze the audio for the specific hotword
-        return False
+        if self.last_audio is None:
+            return False
+        
+        try:
+            # Process the last audio with the specific hotword
+            result = await self._process_audio(self.last_audio, hotword=hotword)
+            
+            if result.get("logp") is not None:
+                logp = result["logp"]
+                _logger.debug(f"Hotword '{hotword}' logp: {logp}, threshold: {self.hotword_threshold}")
+                return logp > self.hotword_threshold
+            
+            return False
+            
+        except Exception as e:
+            _logger.error(f"Error checking hotword presence: {e}")
+            return False
+
+    def __del__(self):
+        """Cleanup when object is destroyed."""
+        try:
+            if self.is_active:
+                self.deactivate()
+            if hasattr(self, 'p') and self.p:
+                self.p.terminate()
+        except Exception:
+            pass  # Ignore cleanup errors

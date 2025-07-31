@@ -102,11 +102,7 @@ class ToolAgent:
                 )
             else:
                 # No tool calls found in response
-                messages = messages.add_user_utterance(
-                    f"The response was: {answer}\n"
-                    f"If the user's question is answered, write {TASK_COMPLETED_TAG} at the beginning of your answer. "
-                    f"Otherwise, provide the appropriate tool calls in the specified format."
-                )
+                break
 
         # Return the final result
         if all_tool_results:
