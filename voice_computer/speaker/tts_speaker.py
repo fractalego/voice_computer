@@ -196,7 +196,7 @@ class TTSSpeaker(BaseSpeaker):
         """
         try:
             # Process text input
-            inputs = self._processor(text=batch_text, return_tensors="pt")
+            inputs = self._processor(text=batch_text + " ... ", return_tensors="pt")
             input_ids = inputs["input_ids"].to(self.device)
             speech = self._model.generate_speech(input_ids, self._speaker_embedding, vocoder=self._vocoder)
             self._audio_queue.append((speech.cpu(), batch_text))
