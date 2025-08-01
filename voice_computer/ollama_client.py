@@ -186,6 +186,7 @@ class OllamaClient:
         def _stream_request(loop):
             """Run the streaming request in a thread."""
             try:
+                _logger.debug("Starting streaming request to Ollama...")
                 response = requests.post(
                     url,
                     headers=headers,
@@ -193,6 +194,7 @@ class OllamaClient:
                     timeout=600,
                     stream=True
                 )
+                _logger.debug(f"Got response from Ollama, status: {response.status_code}")
                 
                 if response.status_code != 200:
                     raise OllamaResponseError(
@@ -201,7 +203,9 @@ class OllamaClient:
                 
                 complete_message = ""
                 tool_calls = None
+                token_count = 0
                 
+                _logger.debug("Starting to process streaming response lines...")
                 for line in response.iter_lines(decode_unicode=True):
                     if line.strip():
                         chunk_data = json.loads(line)
@@ -209,7 +213,8 @@ class OllamaClient:
                         if "message" in chunk_data and "content" in chunk_data["message"]:
                             token = chunk_data["message"]["content"]
                             complete_message += token
-                            
+                            token_count += 1
+
                             # Put token in queue for immediate display
                             asyncio.run_coroutine_threadsafe(
                                 token_queue.put(token), 

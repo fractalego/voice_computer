@@ -135,7 +135,8 @@ def create_example_config_file(path: str) -> None:
     example_config = {
         "listener_model": {
             "listener_silence_timeout": 2,
-            "listener_volume_threshold": 0.6,
+            "listener_volume_threshold": 0.6
+            ,
             "listener_hotword_logp": -8
         },
         "activation_hotwords": ["computer"],

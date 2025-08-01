@@ -75,6 +75,59 @@ class WhisperListener:
         
         # Debug: List available audio devices in debug mode
         self._log_available_audio_devices()
+    
+    def test_microphone(self, duration_seconds: int = 5) -> dict:
+        """
+        Test microphone input for a specified duration and return statistics.
+        
+        Args:
+            duration_seconds: How long to test for
+            
+        Returns:
+            Dictionary with microphone test results
+        """
+        if not self.is_active:
+            self.activate()
+        
+        _logger.info(f"Testing microphone for {duration_seconds} seconds...")
+        samples = []
+        rms_values = []
+        
+        start_time = time.time()
+        while time.time() - start_time < duration_seconds:
+            try:
+                inp = self.stream.read(self.chunk, exception_on_overflow=False)
+                rms_val = self._rms(inp)
+                samples.append(inp)
+                rms_values.append(rms_val)
+                time.sleep(0.01)  # Small delay
+            except Exception as e:
+                _logger.error(f"Error during microphone test: {e}")
+                break
+        
+        if rms_values:
+            results = {
+                "duration": time.time() - start_time,
+                "samples_collected": len(samples),
+                "min_rms": min(rms_values),
+                "max_rms": max(rms_values),
+                "avg_rms": sum(rms_values) / len(rms_values),
+                "current_threshold": self.volume_threshold,
+                "samples_above_threshold": sum(1 for rms in rms_values if rms > self.volume_threshold),
+                "recommended_threshold": max(rms_values) * 0.3  # 30% of max volume
+            }
+            
+            _logger.info(f"Microphone test results:")
+            _logger.info(f"  Duration: {results['duration']:.1f}s")
+            _logger.info(f"  RMS range: {results['min_rms']:.6f} - {results['max_rms']:.6f}")
+            _logger.info(f"  Average RMS: {results['avg_rms']:.6f}")
+            _logger.info(f"  Current threshold: {results['current_threshold']:.6f}")
+            _logger.info(f"  Samples above threshold: {results['samples_above_threshold']}/{len(rms_values)}")
+            _logger.info(f"  Recommended threshold: {results['recommended_threshold']:.6f}")
+            
+            return results
+        else:
+            return {"error": "No samples collected"}
 
     def _log_available_audio_devices(self):
         """Log available audio input devices for debugging."""
@@ -194,7 +247,15 @@ class WhisperListener:
                     input_device_index=self.device_index,  # Use configured device or None for default
                 )
                 self.is_active = True
-                _logger.debug("WhisperListener audio stream activated")
+                _logger.debug(f"WhisperListener audio stream activated - format: {self.format}, channels: {self.channels}, rate: {self.rate}, chunk: {self.chunk}")
+                
+                # Test read a small chunk to make sure the stream is working
+                try:
+                    test_chunk = self.stream.read(self.chunk, exception_on_overflow=False)
+                    test_rms = self._rms(test_chunk)
+                    _logger.debug(f"Stream test successful - read {len(test_chunk) if test_chunk else 0} bytes, RMS: {test_rms:.6f}")
+                except Exception as e:
+                    _logger.warning(f"Stream test failed: {e}")
             except Exception as e:
                 _logger.error(f"Failed to activate audio stream: {e}")
                 raise
@@ -217,14 +278,7 @@ class WhisperListener:
             if len(data) == 0:
                 return 0.0
             
-            # Calculate mean square, ensuring no overflow
-            mean_square = np.mean(data.astype(np.float64)**2)
-            
-            # Ensure non-negative value before sqrt
-            if mean_square < 0:
-                return 0.0
-            
-            rms = np.sqrt(mean_square) / self.range
+            rms = np.mean(np.sqrt(data.astype(np.float64)**2)) / self.chunk
             
             # Handle NaN or infinite values
             if not np.isfinite(rms):
@@ -286,12 +340,26 @@ class WhisperListener:
         # Initialize Whisper model if not already done
         self._initialize_whisper()
 
+        _logger.debug(f"Starting microphone listening loop, volume threshold: {self.volume_threshold}")
+        sample_count = 0
+        
         while True:
             await asyncio.sleep(0.01)  # Small sleep to prevent blocking
             
             try:
                 # Read initial chunk
                 inp = self.stream.read(self.chunk, exception_on_overflow=False)
+                
+                # Debug: Check if we're actually getting data
+                if sample_count == 1:  # Log first sample details
+                    _logger.info(f"First microphone sample: length={len(inp) if inp else 0}, type={type(inp)}")
+                    if inp and len(inp) > 0:
+                        # Convert to numpy to check actual values
+                        data_array = np.frombuffer(inp, dtype=np.int16)
+                        _logger.info(f"Sample data range: [{data_array.min()}, {data_array.max()}], mean: {data_array.mean():.2f}")
+                    else:
+                        _logger.warning("First sample is empty or None!")
+                        
             except Exception as e:
                 _logger.warning(f"Error reading audio: {e}")
                 # Try to reactivate stream
@@ -300,24 +368,37 @@ class WhisperListener:
                 continue
 
             rms_val = self._rms(inp)
+            sample_count += 1
+            
+            # Debug logging every 100 samples (about 1 second at 10ms chunks)
+            if sample_count % 100 == 0:
+                _logger.debug(f"Microphone input: RMS={rms_val:.4f}, threshold={self.volume_threshold:.4f}, data_len={len(inp) if inp else 0}")
             
             if rms_val > self.volume_threshold:
+                _logger.debug(f"Audio detected! RMS={rms_val:.4f} > threshold={self.volume_threshold:.4f}")
+                
                 # Record full audio
                 audio_data = self._record_audio(start_with=inp)
                 
                 # Check if we got valid audio data
                 if len(audio_data) == 0:
+                    _logger.debug("No audio data recorded, continuing...")
                     continue
                     
+                _logger.debug(f"Recorded audio: length={len(audio_data)}, duration={len(audio_data)/16000:.2f}s")
                 self.last_audio = audio_data
                 
                 # Transcribe audio
                 result = await self._process_audio(audio_data)
+                _logger.debug(f"Transcription result: {result}")
                 
                 if result and result.get("transcription"):
                     transcription = result["transcription"].strip()
                     if transcription and transcription.lower() != "[unclear]":
+                        _logger.info(f"Successfully transcribed: '{transcription}'")
                         return transcription
+                    else:
+                        _logger.debug(f"Got unclear transcription or empty result: '{transcription}'")
             else:
                 # Adjust threshold based on ambient noise
                 new_threshold = 2 * rms_val

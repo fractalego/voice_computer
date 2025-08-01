@@ -85,10 +85,17 @@ class VoiceInterface:
     async def input(self) -> str:
         """
         Get voice input from the user.
+        First waits for hotword activation, then listens for the actual command.
         
         Returns:
             The transcribed text from the user
         """
+        # Phase 1: Wait for hotword activation
+        print(COLOR_START + "💭 Listening for activation word ('computer')..." + COLOR_END)
+        await self._wait_for_hotword()
+        
+        # Phase 2: Listen for command after hotword detected
+        print(COLOR_START + "✨ Hotword detected! Listening for your command..." + COLOR_END)
         text = ""
         while not text:
             text = await self._listener.input()
@@ -96,20 +103,85 @@ class VoiceInterface:
                 continue
             
             text = self._remove_activation_word_and_normalize(text)
-            hotword = await self._listener.get_hotword_if_present()
-            if hotword:
-                text = f"[{hotword}] {text}"
+            break
 
         # Simple quality check - if text seems too short or unclear, ask for repeat
         while self._is_listening and self._not_good_enough(text):
             print(COLOR_START + "user> " + text + COLOR_END)
             await self.output("Sorry? Can you repeat?")
             text = await self._listener.input()
+            text = self._remove_activation_word_and_normalize(text)
 
         text = text.lower().capitalize()
         print(COLOR_START + "user> " + text + COLOR_END)
         
         return self._remove_unclear(text)
+    
+    async def _wait_for_hotword(self) -> str:
+        """
+        Wait in a loop until a hotword is detected.
+        Uses continuous audio monitoring with hotword detection.
+        
+        Returns:
+            The detected hotword
+        """
+        _logger.debug("Starting hotword detection loop...")
+        
+        while True:
+            # Listen for audio that might contain hotword
+            text = await self._listener.input()
+            if not text or not text.strip() or text.strip() == "[unclear]":
+                continue
+            
+            _logger.debug(f"Transcribed audio for hotword check: '{text}'")
+            
+            # Check if any configured hotword appears in the transcription
+            detected_hotword = self._check_hotword_in_text(text)
+            if detected_hotword:
+                _logger.info(f"Hotword '{detected_hotword}' detected in transcription!")
+                return detected_hotword
+            
+            # Also check using the advanced logp-based detection if available
+            try:
+                hotword = await self._listener.get_hotword_if_present()
+                if hotword:
+                    _logger.info(f"Hotword '{hotword}' detected via logp analysis!")
+                    return hotword
+            except Exception as e:
+                _logger.debug(f"Logp-based hotword detection failed: {e}")
+            
+            # If no hotword detected, continue listening
+            _logger.debug(f"No hotword detected in: '{text}', continuing to listen...")
+            await asyncio.sleep(0.1)  # Small delay before next listen cycle
+    
+    def _check_hotword_in_text(self, text: str) -> str:
+        """
+        Check if any configured hotword appears in the transcribed text.
+        
+        Args:
+            text: The transcribed text to check
+            
+        Returns:
+            The detected hotword, or empty string if none found
+        """
+        if not text:
+            return ""
+        
+        text_lower = text.lower().strip()
+        
+        # Get configured hotwords
+        activation_hotwords = []
+        if self.config:
+            activation_hotwords = self.config.get_value("activation_hotwords") or ["computer"]
+        else:
+            activation_hotwords = ["computer"]
+        
+        # Check if any hotword appears in the text
+        for hotword in activation_hotwords:
+            if hotword.lower() in text_lower:
+                return hotword
+        
+        return ""
 
     def bot_has_spoken(self, to_set: Optional[bool] = None) -> bool:
         """Get or set whether the bot has spoken."""

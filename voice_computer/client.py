@@ -14,6 +14,7 @@ from .data_types import Messages, Utterance
 from .tool_handler import ToolHandler
 from .mcp_connector import MCPStdioConnector
 from .config import Config
+from .streaming_display import stream_colored_to_console
 
 _logger = logging.getLogger(__name__)
 
@@ -115,13 +116,14 @@ class VoiceComputerClient:
         else:
             _logger.warning("No MCP tools available - running in basic mode")
     
-    async def process_query(self, query: str, use_streaming: bool = True) -> str:
+    async def process_query(self, query: str, use_streaming: bool = True, use_colored_output: bool = True) -> str:
         """
         Process a user query using MCP tools if available.
         
         Args:
             query: The user's query
             use_streaming: Whether to use streaming output (default True)
+            use_colored_output: Whether to use colored output in streaming mode (default True)
             
         Returns:
             The response to the query
@@ -134,7 +136,7 @@ class VoiceComputerClient:
             messages = self._add_tool_results_to_system_prompt(messages)
             
             if use_streaming and self._is_streaming_enabled():
-                return await self._process_streaming_query(messages)
+                return await self._process_streaming_query(messages, use_colored_output)
             else:
                 response = await self.ollama_client.predict(messages)
                 return response.message
@@ -155,7 +157,7 @@ class VoiceComputerClient:
             messages = self._add_tool_results_to_system_prompt(messages)
             
             if use_streaming and self._is_streaming_enabled():
-                return await self._process_streaming_query(messages)
+                return await self._process_streaming_query(messages, use_colored_output)
             else:
                 response = await self.ollama_client.predict(messages)
                 return response.message
@@ -217,8 +219,8 @@ Instructions:
                         await self.voice_interface.output("Goodbye!")
                         break
                     
-                    # Process with agent (disable streaming for voice mode)
-                    response = await self.process_query(user_input, use_streaming=False)
+                    # Process with agent (enable streaming with colors for console output in voice mode)
+                    response = await self.process_query(user_input, use_streaming=True, use_colored_output=True)
                     
                     # Speak response
                     if response:
@@ -261,13 +263,12 @@ Instructions:
                         print("bot> Goodbye!")
                         break
                     
-                    # Process query with streaming
-                    print("bot> ", end='', flush=True)
+                    # Process query with streaming (streaming display will handle "bot> " prefix)
                     response = await self.process_query(user_input, use_streaming=True)
                     
-                    # Response is already printed via streaming, just add newline if needed
+                    # Response is already printed via streaming, just handle empty response
                     if not response:
-                        print("I'm sorry, I couldn't process that.")
+                        print("bot> I'm sorry, I couldn't process that.")
                         
                 except KeyboardInterrupt:
                     _logger.info("Text loop interrupted by user")
@@ -320,49 +321,28 @@ Instructions:
         streaming_config = self.config.get_value("streaming") or {}
         return streaming_config.get("flush_delay", 0.1)
     
-    async def _process_streaming_query(self, messages: Messages) -> str:
+    async def _process_streaming_query(self, messages: Messages, use_colored_output: bool = True) -> str:
         """Process query with streaming output to console."""
         token_queue = asyncio.Queue()
-        token_batch = []
         batch_size = self._get_token_batch_size()
         flush_delay = self._get_flush_delay()
         
-        async def display_tokens():
-            """Async task to display tokens in real-time as they arrive."""
-            stream_complete = False
-            
-            while not stream_complete:
-                try:
-                    # Wait for tokens with a timeout to check batching
-                    token = await asyncio.wait_for(token_queue.get(), timeout=flush_delay)
-                    
-                    if token is None:  # End of stream signal
-                        stream_complete = True
-                        # Display any remaining tokens
-                        if token_batch:
-                            remaining_text = ''.join(token_batch)
-                            print(remaining_text, end='', flush=True)
-                        print()  # New line after streaming is complete
-                        break
-                    
-                    # Add token to batch
-                    token_batch.append(token)
-                    
-                    # Display batch if it reaches the batch size
-                    if len(token_batch) >= batch_size:
-                        batch_text = ''.join(token_batch)
-                        print(batch_text, end='', flush=True)
-                        token_batch.clear()
-                        
-                except asyncio.TimeoutError:
-                    # Display partial batch on timeout if there are tokens waiting
-                    if token_batch:
-                        batch_text = ''.join(token_batch)
-                        print(batch_text, end='', flush=True)
-                        token_batch.clear()
-        
-        # Start both tasks concurrently
-        display_task = asyncio.create_task(display_tokens())
+        # Create streaming display task with colored output for text mode
+        if use_colored_output:
+            display_task = await stream_colored_to_console(
+                token_queue=token_queue,
+                prefix="bot> ",
+                batch_size=batch_size,
+                flush_delay=flush_delay
+            )
+        else:
+            # For voice mode or when colored output is disabled
+            from .streaming_display import stream_to_console
+            display_task = await stream_to_console(
+                token_queue=token_queue,
+                batch_size=batch_size,
+                flush_delay=flush_delay
+            )
         
         try:
             # Start the streaming prediction (this will populate the queue)
