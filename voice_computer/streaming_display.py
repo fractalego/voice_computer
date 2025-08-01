@@ -4,8 +4,9 @@ Streaming text display utilities for real-time token output with TTS integration
 
 import asyncio
 import logging
-from typing import Optional, Callable
+import threading
 
+from typing import Optional, Callable
 from voice_computer.speaker.tts_speaker import TTSSpeaker
 
 _logger = logging.getLogger(__name__)
@@ -20,6 +21,7 @@ class StreamingDisplay:
         flush_delay: float = 0.1,
         output_handler: Optional[Callable[[str], None]] = None,
         end_handler: Optional[Callable[[], None]] = None,
+        tts_speaker: Optional[TTSSpeaker] = None,
     ):
         """
         Initialize streaming display.
@@ -34,6 +36,7 @@ class StreamingDisplay:
         self.flush_delay = flush_delay
         self.output_handler = output_handler or self._default_output_handler
         self.end_handler = end_handler or self._default_end_handler
+        self.tts_speaker = tts_speaker
 
     def _default_output_handler(self, text: str) -> None:
         """Default output handler that prints text without newline."""
@@ -54,7 +57,14 @@ class StreamingDisplay:
         stream_complete = False
         
         _logger.debug(f"Starting streaming display with batch_size={self.batch_size}, flush_delay={self.flush_delay}")
-        
+
+        # create a thread to handle TTS if a speaker is provided
+
+        is_speaking = False
+        speaker_thread = None
+        if self.tts_speaker:
+            speaker_thread = threading.Thread(target=self.tts_speaker.speak_batch)
+
         while not stream_complete:
             try:
                 # Wait for tokens with a timeout to check batching
@@ -80,14 +90,22 @@ class StreamingDisplay:
                     batch_text = ''.join(token_batch)
                     self.output_handler(batch_text)
                     token_batch.clear()
-                    
+
+                    if not is_speaking and speaker_thread is not None:
+                        # Start TTS speaker thread if not already running
+                        speaker_thread.start()
+                        is_speaking = True
+
             except asyncio.TimeoutError:
                 # Display partial batch on timeout if there are tokens waiting
                 if token_batch:
                     batch_text = ''.join(token_batch)
                     self.output_handler(batch_text)
                     token_batch.clear()
-        
+
+        if speaker_thread is not None:
+            speaker_thread.join()
+
         _logger.debug("Streaming display completed")
 
 
@@ -131,7 +149,7 @@ class ColoredStreamingDisplay(StreamingDisplay):
         color_start: str = "\033[94m",  # Blue
         color_end: str = "\033[0m",     # Reset
         prefix: str = "",
-        speaker_handler: Optional[TTSSpeaker] = None,
+        tts_speaker: Optional[TTSSpeaker] = None,
         **kwargs
     ):
         """
@@ -149,28 +167,30 @@ class ColoredStreamingDisplay(StreamingDisplay):
         self.color_end = color_end
         self.prefix = prefix
         self._first_output = True
-        self._speaker_handler = speaker_handler
+        self.tts_speaker = tts_speaker
 
         super().__init__(
             batch_size=batch_size,
             flush_delay=flush_delay,
+            tts_speaker=tts_speaker,
             **kwargs
         )
     
     def _default_output_handler(self, text: str) -> None:
         """Colored output handler."""
         if self._first_output:
-            # Add prefix and color start for first output
             output = f"{self.color_start}{self.prefix}{text}"
             self._first_output = False
         else:
             output = text
+
+        if self.tts_speaker:
+            text = text.replace(self.color_start, "").replace(self.color_end, "")
+            text = text.replace(self.prefix, "")
+            self.tts_speaker.add_text_batch(text)
         
         print(output, end='', flush=True)
-        # If a speaker handler is provided, use it to speak the text
-        if self._speaker_handler:
-            self._speaker_handler.speak(text)
-    
+
     def _default_end_handler(self) -> None:
         """Colored end handler that resets color."""
         print(f"{self.color_end}")
@@ -227,7 +247,7 @@ async def stream_colored_to_console_with_tts(
         color_start=color_start,
         color_end=color_end,
         prefix=prefix,
-        speaker_handler=tts_speaker,
+        tts_speaker=tts_speaker,
     )
 
     return asyncio.create_task(display.display_stream(token_queue))

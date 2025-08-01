@@ -3,11 +3,14 @@ TTS Speaker implementation using microsoft/speecht5_tts with streaming support.
 """
 
 import logging
+import time
+
 import torch
 import numpy as np
 import pyaudio
 
-from typing import Optional, Callable
+from typing import Optional
+
 from transformers import SpeechT5Processor, SpeechT5ForTextToSpeech, SpeechT5HifiGan
 from .base_speaker import BaseSpeaker
 from ..speaker_embeddings import get_default_speaker_embedding
@@ -37,7 +40,8 @@ class TTSSpeaker(BaseSpeaker):
         # Audio playback setup
         self._pyaudio = None
         self._sample_rate = 16000  # Default sample rate for SpeechT5
-        
+        self._audio_queue = []
+
         _logger.info(f"TTSSpeaker created with model {model_name} on device {self.device}")
     
     def _get_best_device(self) -> str:
@@ -152,7 +156,7 @@ class TTSSpeaker(BaseSpeaker):
             _logger.debug(f"Speaker embedding dtype: {self._speaker_embedding.dtype if self._speaker_embedding is not None else 'None'}")
             raise
     
-    def _play_audio(self, audio_data, sample_rate: int):
+    def _play_audio(self, audio_data, sample_rate: int, stream: Optional[pyaudio.Stream] = None):
         """Play audio data using PyAudio."""
         try:
             # Convert torch tensor to numpy if needed
@@ -164,53 +168,62 @@ class TTSSpeaker(BaseSpeaker):
                 audio_data = audio_data.astype(np.float32)
             
             # Open stream for this audio chunk
-            stream = self._pyaudio.open(
-                format=pyaudio.paFloat32,
-                channels=1,
-                rate=sample_rate,
-                output=True
-            )
+            if not stream:
+                stream = self._pyaudio.open(
+                    format=pyaudio.paFloat32,
+                    channels=1,
+                    rate=sample_rate,
+                    output=True
+                )
             
             # Play audio
             stream.write(audio_data.tobytes())
             
             # Clean up
-            stream.stop_stream()
-            stream.close()
+            if not stream:
+                stream.stop_stream()
+                stream.close()
             
         except Exception as e:
             _logger.error(f"Error playing audio: {e}")
-    
-    def cleanup(self):
-        """Clean up resources."""
-        # Stop streaming if active
-        if self._is_streaming:
-            self.stop_streaming_speech()
-        
-        # Clean up PyAudio
-        if self._pyaudio is not None:
-            try:
-                self._pyaudio.terminate()
-                _logger.debug("PyAudio terminated successfully")
-            except Exception as e:
-                _logger.debug(f"Error terminating PyAudio: {e}")
-            finally:
-                self._pyaudio = None
-        
-        # Clean up model resources
-        for model_name, model in [("processor", self._processor), ("model", self._model), ("vocoder", self._vocoder)]:
-            if model is not None:
-                try:
-                    del model
-                    setattr(self, f"_{model_name}", None)
-                except Exception as e:
-                    _logger.debug(f"Error cleaning up {model_name}: {e}")
-        
-        # Clear CUDA cache if using GPU
-        if self.device != "cpu" and torch.cuda.is_available():
-            try:
-                torch.cuda.empty_cache()
-            except Exception:
-                pass
 
+    def add_text_batch(self, batch_text):
+        """
+        Add a batch of text to be synthesized.
+
+        Args:
+            batch_text: Text to synthesize
+        """
+        try:
+            # Process text input
+            inputs = self._processor(text=batch_text, return_tensors="pt")
+            input_ids = inputs["input_ids"].to(self.device)
+            speech = self._model.generate_speech(input_ids, self._speaker_embedding, vocoder=self._vocoder)
+            self._audio_queue.append((speech.cpu(), batch_text))
+
+        except Exception as e:
+            _logger.error(f"Error in TTS synthesis for batch: {e}")
+            raise
+
+    def speak_batch(self):
+        stream = self._pyaudio.open(
+            format=pyaudio.paFloat32,
+            channels=1,
+            rate=self._sample_rate,
+            output=True
+        )
+        while self._audio_queue:
+            audio_data, text = self._audio_queue.pop(0)
+            try:
+                self._play_audio(audio_data, self._sample_rate, stream)
+            except Exception as e:
+                _logger.error(f"Error playing audio batch: {e}")
+                raise
+        time.sleep(0.2)
+
+        stream.stop_stream()
+        stream.close()
+
+        # Clear the queue after processing
+        self._audio_queue.clear()
 
