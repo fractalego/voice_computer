@@ -15,6 +15,7 @@ from .tool_handler import ToolHandler
 from .mcp_connector import MCPStdioConnector
 from .config import Config
 from .streaming_display import stream_colored_to_console
+from .entailer import Entailer
 
 _logger = logging.getLogger(__name__)
 
@@ -38,7 +39,18 @@ class SimpleConfig:
                 "enabled": True,
                 "token_batch_size": 4,
                 "flush_delay": 0.1
-            }
+            },
+            "exit_sentences": [
+                "please stop this conversation",
+                "good bye",
+                "thank you",
+                "shut up",
+                "stop talking",
+                "end conversation",
+                "I'm done",
+                "that's all"
+            ],
+            "exit_entailment_threshold": 0.7
         }
     
     def get_value(self, key: str) -> Any:
@@ -72,6 +84,9 @@ class VoiceComputerClient:
         # Tool results queue (last 5 results)
         self.tool_results_queue = []
         self._initialize_mcp_tools()
+        
+        # Initialize entailer for exit detection
+        self.entailer = Entailer(self.config)
         
         _logger.info("VoiceComputerClient initialized")
     
@@ -192,6 +207,53 @@ Instructions:
         
         return messages.add_system_prompt(system_prompt)
     
+    def _is_exit_command(self, user_input: str) -> bool:
+        """
+        Check if user input is an exit command using entailment.
+        
+        Args:
+            user_input: The user's input text
+            
+        Returns:
+            True if the input entails an exit command, False otherwise
+        """
+        if not user_input or not user_input.strip():
+            return False
+        
+        # Get configured exit sentences and threshold
+        exit_sentences = self.config.get_value("exit_sentences") or [
+            "please stop this conversation",
+            "good bye", 
+            "thank you",
+            "shut up"
+        ]
+        threshold = self.config.get_value("exit_entailment_threshold") or 0.7
+        
+        user_input_clean = user_input.strip().lower()
+        
+        try:
+            # Check entailment against each exit sentence
+            for exit_sentence in exit_sentences:
+                score = self.entailer.judge(user_input_clean, exit_sentence.lower())
+                _logger.debug(f"Exit entailment score for '{user_input_clean}' -> '{exit_sentence}': {score}")
+                
+                if score >= threshold:
+                    _logger.info(f"Exit command detected: '{user_input_clean}' entails '{exit_sentence}' (score: {score})")
+                    return True
+            
+            return False
+            
+        except Exception as e:
+            _logger.error(f"Error checking exit command with entailer: {e}")
+            # Fallback to simple keyword matching
+            exit_keywords = ["goodbye", "bye", "stop", "quit", "exit", "shut up", "thank you"]
+            user_lower = user_input_clean
+            for keyword in exit_keywords:
+                if keyword in user_lower:
+                    _logger.info(f"Exit command detected via fallback keyword matching: '{keyword}' in '{user_input_clean}'")
+                    return True
+            return False
+    
     async def _handle_voice_activation_cycle(self) -> bool:
         """
         Handle a single voice activation cycle (hotword detection + conversation).
@@ -209,6 +271,9 @@ Instructions:
                 # Single-command mode: process the instruction immediately and return to hotword listening
                 _logger.info(f"Single-command mode activated with instruction: '{immediate_instruction}'")
                 
+                # Play activation sound when conversation starts
+                await self.voice_interface._play_activation_sound()
+                
                 # Process the immediate instruction
                 response = await self.process_query(immediate_instruction, use_streaming=True, use_colored_output=True)
                 
@@ -223,6 +288,10 @@ Instructions:
             else:
                 # Persistent conversation mode
                 conversation_is_on = True
+                
+                # Play activation sound when conversation starts
+                await self.voice_interface._play_activation_sound()
+                
                 await self.voice_interface.output("Voice assistant ready. How can I help you?")
             
             # Inner loop: Handle conversation until exit command
@@ -254,10 +323,11 @@ Instructions:
                     if not user_input or not user_input.strip():
                         continue
                     
-                    # Handle exit commands
-                    exit_commands = ['exit', 'quit', 'stop', 'goodbye', 'bye']
-                    if user_input.lower().strip() in exit_commands:
+                    # Handle exit commands using entailer
+                    if self._is_exit_command(user_input):
                         await self.voice_interface.output("Goodbye!")
+                        # Play deactivation sound when conversation ends
+                        await self.voice_interface._play_deactivation_sound()
                         conversation_is_on = False  # End conversation, return to hotword listening
                         break
                     
@@ -327,9 +397,8 @@ Instructions:
                     if not user_input:
                         continue
                     
-                    # Handle exit commands
-                    exit_commands = ['exit', 'quit', 'stop', 'goodbye', 'bye']
-                    if user_input.lower() in exit_commands:
+                    # Handle exit commands using entailer
+                    if self._is_exit_command(user_input):
                         print("bot> Goodbye!")
                         break
                     

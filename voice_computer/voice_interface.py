@@ -244,8 +244,6 @@ class VoiceInterface:
     def activate(self):
         """Activate the voice interface."""
         if not self._is_listening:
-            if self._waking_up_sound:
-                asyncio.create_task(self._play_activation_sound())
             self._is_listening = True
             _logger.info("Voice interface activated")
 
