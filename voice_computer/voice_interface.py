@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Optional
 
 from .whisper_listener import WhisperListener
-from .speaker import SoundFileSpeaker
+from .speaker import SoundFileSpeaker, TTSSpeaker
 
 _logger = logging.getLogger(__name__)
 
@@ -28,6 +28,7 @@ class VoiceInterface:
         self._is_listening = False
         self._bot_has_spoken = False
         self._listener = WhisperListener(config)
+        self._tts_speaker = TTSSpeaker(config)
         
         # Audio feedback settings
         self._waking_up_sound = True
@@ -290,51 +291,7 @@ class VoiceInterface:
         """
         Use system TTS to speak text.
         """
-        try:
-            # Try different TTS commands based on the system
-            tts_commands = [
-                # macOS
-                ['say', text],
-                # Linux with espeak
-                ['espeak', text],
-                # Linux with festival
-                ['festival', '--tts'],
-                # Linux with spd-say
-                ['spd-say', text],
-            ]
-
-            for cmd in tts_commands:
-                try:
-                    if cmd[0] == 'festival':
-                        # Festival reads from stdin
-                        process = await asyncio.create_subprocess_exec(
-                            *cmd,
-                            stdin=asyncio.subprocess.PIPE,
-                            stdout=asyncio.subprocess.DEVNULL,
-                            stderr=asyncio.subprocess.DEVNULL
-                        )
-                        await process.communicate(text.encode())
-                    else:
-                        process = await asyncio.create_subprocess_exec(
-                            *cmd,
-                            stdout=asyncio.subprocess.DEVNULL,
-                            stderr=asyncio.subprocess.DEVNULL
-                        )
-                        await process.wait()
-                    
-                    if process.returncode == 0:
-                        return
-                        
-                except FileNotFoundError:
-                    continue
-                except Exception as e:
-                    _logger.debug(f"TTS command failed: {e}")
-                    continue
-
-            _logger.warning("No working TTS command found. Install espeak, festival, or spd-say for speech output.")
-            
-        except Exception as e:
-            _logger.error(f"Error speaking text: {e}")
+        self._tts_speaker.speak(text)
 
     async def _play_activation_sound(self) -> None:
         """Play activation sound."""

@@ -1,5 +1,5 @@
 """
-Streaming text display utilities for real-time token output.
+Streaming text display utilities for real-time token output with TTS integration.
 """
 
 import asyncio
@@ -194,6 +194,113 @@ async def stream_colored_to_console(
 ) -> asyncio.Task:
     """Stream tokens to console with colored output."""
     display = ColoredStreamingDisplay(
+        batch_size=batch_size,
+        flush_delay=flush_delay,
+        color_start=color_start,
+        color_end=color_end,
+        prefix=prefix
+    )
+    
+    return asyncio.create_task(display.display_stream(token_queue))
+
+
+class TTSStreamingDisplay(ColoredStreamingDisplay):
+    """Streaming display with TTS integration for real-time speech synthesis."""
+    
+    def __init__(
+        self,
+        tts_speaker,
+        batch_size: int = 4,
+        flush_delay: float = 0.1,
+        color_start: str = "\033[94m",  # Blue
+        color_end: str = "\033[0m",     # Reset
+        prefix: str = "",
+        **kwargs
+    ):
+        """
+        Initialize TTS streaming display.
+        
+        Args:
+            tts_speaker: TTSSpeaker instance for speech synthesis
+            batch_size: Number of tokens to batch before displaying
+            flush_delay: Maximum delay before flushing partial batch (seconds)
+            color_start: ANSI color code to start with
+            color_end: ANSI color code to end with
+            prefix: Prefix to add to output (e.g., "bot> ")
+            **kwargs: Additional arguments passed to parent class
+        """
+        super().__init__(
+            batch_size=batch_size,
+            flush_delay=flush_delay,
+            color_start=color_start,
+            color_end=color_end,
+            prefix=prefix,
+            **kwargs
+        )
+        self.tts_speaker = tts_speaker
+        self._tts_active = False
+    
+    async def display_stream(self, token_queue: asyncio.Queue) -> None:
+        """
+        Display tokens from a queue in real-time with TTS synthesis.
+        
+        Args:
+            token_queue: Queue containing tokens to display, None signals end of stream
+        """
+        # Start TTS streaming
+        if self.tts_speaker:
+            try:
+                self.tts_speaker.start_streaming_speech(text_callback=self._tts_text_callback)
+                self._tts_active = True
+                _logger.debug("TTS streaming started")
+            except Exception as e:
+                _logger.error(f"Failed to start TTS streaming: {e}")
+                self.tts_speaker = None
+        
+        try:
+            # Use parent's display logic but with TTS integration
+            await super().display_stream(token_queue)
+            await asyncio.sleep(0.1)
+        finally:
+            # Stop TTS streaming
+            if self._tts_active and self.tts_speaker:
+                try:
+                    self.tts_speaker.stop_streaming_speech()
+                    self._tts_active = False
+                    _logger.debug("TTS streaming stopped")
+                except Exception as e:
+                    _logger.error(f"Error stopping TTS streaming: {e}")
+    
+    def _default_output_handler(self, text: str) -> None:
+        """Output handler with TTS integration."""
+        # Send text to TTS for synthesis
+        if self._tts_active and self.tts_speaker and text.strip():
+            try:
+                self.tts_speaker.add_text_batch(text)
+            except Exception as e:
+                _logger.error(f"Error adding text to TTS: {e}")
+        
+        # Display text normally
+        super()._default_output_handler(text)
+    
+    def _tts_text_callback(self, text_batch: str):
+        """Callback for TTS text processing (for debugging/logging)."""
+        pass
+
+
+# Convenience function for TTS streaming
+async def stream_with_tts_to_console(
+    token_queue: asyncio.Queue,
+    tts_speaker,
+    prefix: str = "bot> ",
+    color_start: str = "\033[94m",  # Blue
+    color_end: str = "\033[0m",     # Reset
+    batch_size: int = 4,
+    flush_delay: float = 0.1
+) -> asyncio.Task:
+    """Stream tokens to console with TTS synthesis."""
+    display = TTSStreamingDisplay(
+        tts_speaker=tts_speaker,
         batch_size=batch_size,
         flush_delay=flush_delay,
         color_start=color_start,
