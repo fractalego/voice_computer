@@ -8,6 +8,7 @@ import logging
 import torch
 from typing import Optional
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
+from transformers import logging as transformers_logging
 from .config import Config
 
 _logger = logging.getLogger(__name__)
@@ -51,6 +52,10 @@ class Entailer:
             return
             
         _logger.info(f"Loading entailment model {self.model_name} on device {self.device}")
+        
+        # Temporarily suppress transformers warnings about unsupported generation flags
+        original_verbosity = transformers_logging.get_verbosity()
+        transformers_logging.set_verbosity_error()
         
         try:
             self.model = AutoModelForSequenceClassification.from_pretrained(
@@ -98,6 +103,9 @@ class Entailer:
         except Exception as e:
             _logger.error(f"Failed to load entailment model {self.model_name}: {e}")
             raise
+        finally:
+            # Restore original transformers verbosity
+            transformers_logging.set_verbosity(original_verbosity)
     
     def judge(self, lhs: str, rhs: str) -> float:
         """
