@@ -476,7 +476,6 @@ class WhisperListener:
                     input_features,
                     num_beams=num_beams,
                     return_dict_in_generate=True,
-                    output_scores=True,
                     max_length=num_tokens,
                 )
                 

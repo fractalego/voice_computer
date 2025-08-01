@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Optional
 
 from .whisper_listener import WhisperListener
+from .speaker import SoundFileSpeaker
 
 _logger = logging.getLogger(__name__)
 
@@ -37,6 +38,14 @@ class VoiceInterface:
         self._activation_sound_path = sounds_dir / "activation.wav"
         self._deactivation_sound_path = sounds_dir / "deactivation.wav"
         self._deny_sound_path = sounds_dir / "deny.wav"
+        
+        # Initialize sound file speaker
+        try:
+            self._speaker = SoundFileSpeaker()
+            _logger.debug("SoundFileSpeaker initialized successfully")
+        except Exception as e:
+            _logger.warning(f"Failed to initialize SoundFileSpeaker: {e}")
+            self._speaker = None
         
         if config:
             self._waking_up_sound = config.get_value("waking_up_sound") or True
@@ -260,6 +269,22 @@ class VoiceInterface:
             self._is_listening = False
             self._listener.deactivate()
             _logger.info("Voice interface deactivated")
+    
+    def cleanup(self):
+        """Clean up resources."""
+        if hasattr(self, '_speaker') and self._speaker is not None:
+            try:
+                self._speaker.cleanup()
+                _logger.debug("Speaker cleanup completed")
+            except Exception as e:
+                _logger.debug(f"Error during speaker cleanup: {e}")
+    
+    def __del__(self):
+        """Cleanup on destruction."""
+        try:
+            self.cleanup()
+        except Exception:
+            pass  # Ignore cleanup errors during destruction
 
     async def _speak_text(self, text: str) -> None:
         """
@@ -334,49 +359,24 @@ class VoiceInterface:
 
     async def _play_sound_file(self, sound_file_path: Path) -> None:
         """
-        Play a specific sound file using available audio players.
+        Play a specific sound file using the SoundFileSpeaker.
         """
+        if self._speaker is None:
+            _logger.warning(f"Speaker not available, cannot play sound: {sound_file_path}")
+            return
+            
         try:
             sound_file_str = str(sound_file_path)
             
-            # Try different audio players in order of preference
-            audio_players = [
-                # macOS
-                ['afplay', sound_file_str],
-                # Linux with aplay (ALSA)
-                ['aplay', sound_file_str],
-                # Linux with paplay (PulseAudio)
-                ['paplay', sound_file_str],
-                # Cross-platform with ffplay (if available)
-                ['ffplay', '-nodisp', '-autoexit', sound_file_str],
-                # Cross-platform with mpv (if available)
-                ['mpv', '--no-video', '--quiet', sound_file_str],
-            ]
-
-            for cmd in audio_players:
-                try:
-                    _logger.debug(f"Trying audio command: {' '.join(cmd)}")
-                    process = await asyncio.create_subprocess_exec(
-                        *cmd,
-                        stdout=asyncio.subprocess.DEVNULL,
-                        stderr=asyncio.subprocess.DEVNULL
-                    )
-                    await process.wait()
-                    
-                    if process.returncode == 0:
-                        _logger.debug(f"Successfully played sound: {sound_file_path}")
-                        return
-                        
-                except FileNotFoundError:
-                    _logger.debug(f"Audio player not found: {cmd[0]}")
-                    continue
-                except Exception as e:
-                    _logger.debug(f"Audio player failed: {cmd[0]} - {e}")
-                    continue
-
-            # If no audio player works, log warning
-            _logger.warning(f"No working audio player found to play: {sound_file_path}")
-            _logger.info("Install an audio player: sudo apt-get install alsa-utils pulseaudio-utils (Linux) or use macOS/Windows built-in players")
+            # Run the speaker in a thread to avoid blocking the async loop
+            def play_sound():
+                self._speaker.speak(sound_file_str)
+            
+            # Execute the blocking audio playback in a thread pool
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, play_sound)
+            
+            _logger.debug(f"Successfully played sound: {sound_file_path}")
             
         except Exception as e:
             _logger.error(f"Error playing sound file {sound_file_path}: {e}")
