@@ -146,7 +146,7 @@ class WhisperListener:
         except Exception as e:
             _logger.debug(f"Error listing audio devices: {e}")
 
-    def _initialize_whisper(self):
+    def initialize_whisper(self):
         """Initialize the Whisper model and processor (adapted from WhisperHandler)."""
         if self.initialized:
             return
@@ -338,7 +338,7 @@ class WhisperListener:
             self.activate()
 
         # Initialize Whisper model if not already done
-        self._initialize_whisper()
+        self.initialize_whisper()
 
         _logger.debug(f"Starting microphone listening loop, volume threshold: {self.volume_threshold}")
         sample_count = 0

@@ -28,7 +28,7 @@ class VoiceInterface:
         self._is_listening = False
         self._bot_has_spoken = False
         self._listener = WhisperListener(config)
-        self._tts_speaker = TTSSpeaker(config)
+        self._tts_speaker = TTSSpeaker()
         
         # Audio feedback settings
         self._waking_up_sound = True
@@ -367,3 +367,6 @@ class VoiceInterface:
         text = re.sub(r'\[unclear\]', '', text, flags=re.IGNORECASE)
         text = re.sub(r'\[.*?\]', '', text)  # Remove any bracketed content
         return text.strip()
+
+    def initialize(self):
+        self._listener.initialize_whisper()

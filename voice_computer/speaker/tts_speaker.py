@@ -2,17 +2,14 @@
 TTS Speaker implementation using microsoft/speecht5_tts with streaming support.
 """
 
-import asyncio
 import logging
-import queue
-import threading
-import time
 import torch
 import numpy as np
+import pyaudio
+import threading
+
 from typing import Optional, Callable
 from transformers import SpeechT5Processor, SpeechT5ForTextToSpeech, SpeechT5HifiGan
-import pyaudio
-
 from .base_speaker import BaseSpeaker
 from ..speaker_embeddings import get_default_speaker_embedding
 
@@ -41,14 +38,6 @@ class TTSSpeaker(BaseSpeaker):
         # Audio playback setup
         self._pyaudio = None
         self._sample_rate = 16000  # Default sample rate for SpeechT5
-        
-        # Streaming setup
-        self._text_queue = queue.Queue()
-        self._audio_queue = queue.Queue()
-        self._streaming_thread = None
-        self._playback_thread = None
-        self._stop_streaming = threading.Event()
-        self._is_streaming = False
         
         _logger.info(f"TTSSpeaker created with model {model_name} on device {self.device}")
     
@@ -166,195 +155,6 @@ class TTSSpeaker(BaseSpeaker):
             _logger.debug(f"Speaker embedding dtype: {self._speaker_embedding.dtype if self._speaker_embedding is not None else 'None'}")
             raise
     
-    def start_streaming_speech(self, text_callback: Optional[Callable[[str], None]] = None):
-        """
-        Start streaming TTS mode to process text batches as they arrive.
-        
-        Args:
-            text_callback: Optional callback to receive processed text batches
-        """
-        if not self.initialized:
-            self.initialize()
-        
-        if self._is_streaming:
-            _logger.warning("Streaming already active")
-            return
-        
-        self._is_streaming = True
-        self._stop_streaming.clear()
-        
-        # Start processing threads
-        self._streaming_thread = threading.Thread(
-            target=self._streaming_worker, 
-            args=(text_callback,)
-        )
-        self._playback_thread = threading.Thread(target=self._playback_worker)
-        
-        self._streaming_thread.start()
-        self._playback_thread.start()
-        
-        _logger.info("Streaming TTS started")
-    
-    def add_text_batch(self, text_batch: str):
-        """
-        Add a text batch to the streaming TTS queue.
-        
-        Args:
-            text_batch: Batch of text to synthesize
-        """
-        if not self._is_streaming:
-            _logger.warning("Streaming not active, call start_streaming_speech() first")
-            return
-        
-        if text_batch.strip():  # Only add non-empty batches
-            self._text_queue.put(text_batch)
-    
-    def stop_streaming_speech(self):
-        """Stop streaming TTS mode."""
-        if not self._is_streaming:
-            return
-        
-        self._is_streaming = False
-        self._stop_streaming.set()
-        
-        # Signal end of text stream
-        self._text_queue.put(None)
-        self._audio_queue.put(None)
-        
-        # Wait for threads to finish
-        if self._streaming_thread and self._streaming_thread.is_alive():
-            self._streaming_thread.join(timeout=5.0)
-        if self._playback_thread and self._playback_thread.is_alive():
-            self._playback_thread.join(timeout=5.0)
-        
-        _logger.info("Streaming TTS stopped")
-    
-    def _streaming_worker(self, text_callback: Optional[Callable[[str], None]]):
-        """Worker thread for processing streaming text batches."""
-        _logger.debug("Streaming worker started")
-        
-        accumulated_text = ""
-        sentence_endings = ['.', '!', '?', '\n']
-        
-        while not self._stop_streaming.is_set():
-            try:
-                # Get text batch with timeout
-                text_batch = self._text_queue.get(timeout=0.1)
-                
-                if text_batch is None:  # End of stream signal
-                    break
-                
-                accumulated_text += text_batch
-                
-                # Call text callback if provided
-                if text_callback:
-                    text_callback(text_batch)
-                
-                # Check if we have complete sentences to synthesize
-                sentences_to_synthesize = []
-                
-                # Look for sentence endings
-                for ending in sentence_endings:
-                    if ending in accumulated_text:
-                        parts = accumulated_text.split(ending)
-                        # Process all complete sentences
-                        for i in range(len(parts) - 1):
-                            sentence = parts[i] + ending
-                            if sentence.strip():
-                                sentences_to_synthesize.append(sentence.strip())
-                        
-                        # Keep the last incomplete part
-                        accumulated_text = parts[-1]
-                        break
-                
-                # Also synthesize if we have enough accumulated text (word boundary)
-                if len(accumulated_text) > 100:  # Adjust threshold as needed
-                    words = accumulated_text.split()
-                    if len(words) > 10:  # Ensure we have complete words
-                        # Take most words, leave a few for context
-                        words_to_synthesize = words[:-2]
-                        sentence = ' '.join(words_to_synthesize)
-                        if sentence.strip():
-                            sentences_to_synthesize.append(sentence.strip())
-                        accumulated_text = ' '.join(words[-2:])
-                
-                # Synthesize sentences
-                for sentence in sentences_to_synthesize:
-                    self._synthesize_sentence(sentence)
-                    
-            except queue.Empty:
-                continue
-            except Exception as e:
-                _logger.error(f"Error in streaming worker: {e}")
-        
-        # Process any remaining text
-        if accumulated_text.strip():
-            self._synthesize_sentence(accumulated_text.strip())
-        
-        _logger.debug("Streaming worker finished")
-    
-    def _synthesize_sentence(self, text: str):
-        """Synthesize a single sentence and queue audio."""
-        try:
-            with torch.no_grad():
-                # Debug logging for dtype issues
-                _logger.debug(f"Synthesizing: '{text[:50]}...'")
-                _logger.debug(f"Speaker embedding shape: {self._speaker_embedding.shape}, dtype: {self._speaker_embedding.dtype}")
-                
-                # Process text input
-                inputs = self._processor(text=text, return_tensors="pt")
-                
-                # Move inputs to device
-                input_ids = inputs["input_ids"].to(self.device)
-                
-                # Generate speech
-                speech = self._model.generate_speech(input_ids, self._speaker_embedding, vocoder=self._vocoder)
-                
-                # Queue audio for playback
-                self._audio_queue.put({
-                    "audio": speech.cpu(),
-                    "sample_rate": self._sample_rate,
-                    "text": text
-                })
-                
-        except Exception as e:
-            _logger.error(f"Error synthesizing sentence '{text}': {e}")
-            _logger.debug(f"Model dtype: {getattr(self, 'torch_dtype', 'unknown')}")
-            _logger.debug(f"Speaker embedding dtype: {self._speaker_embedding.dtype if self._speaker_embedding is not None else 'None'}")
-    
-    def _playback_worker(self):
-        """Worker thread for playing back synthesized audio."""
-        _logger.debug("Playback worker started")
-        
-        stream = None
-        
-        try:
-            while not self._stop_streaming.is_set():
-                try:
-                    # Get audio with timeout
-                    audio_data = self._audio_queue.get(timeout=0.1)
-                    
-                    if audio_data is None:  # End of stream signal
-                        break
-                    
-                    # Play the audio
-                    self._play_audio(audio_data["audio"], audio_data["sample_rate"])
-                    
-                except queue.Empty:
-                    continue
-                except Exception as e:
-                    _logger.error(f"Error in playback worker: {e}")
-                    
-        finally:
-            if stream:
-                try:
-                    stream.stop_stream()
-                    stream.close()
-                except Exception:
-                    pass
-        
-        _logger.debug("Playback worker finished")
-    
     def _play_audio(self, audio_data, sample_rate: int):
         """Play audio data using PyAudio."""
         try:
@@ -415,3 +215,29 @@ class TTSSpeaker(BaseSpeaker):
                 torch.cuda.empty_cache()
             except Exception:
                 pass
+
+
+class PrintAndSpeak():
+    def __init__(self, tts_speaker: TTSSpeaker) -> None:
+        self._tts_speaker = tts_speaker
+        self._tts_speaker.initialize()
+        self._lock = threading.Lock()
+
+    def __call__(self, text: str):
+        """
+        Print the text and speak it using the TTS speaker.
+
+        Args:
+            text: Text to print and speak
+        """
+        print(text, end='', flush=True
+        def speak_thread(to_speak: str):
+            with self._lock:
+                try:
+                    self._tts_speaker.speak(to_speak)
+                except Exception as e:
+                    _logger.error(f"Error speaking text '{to_speak}': {e}")
+
+        # Start speaking in a separate thread to avoid blocking
+        speak_thread = threading.Thread(target=speak_thread, args=(text,))
+        speak_thread.start()

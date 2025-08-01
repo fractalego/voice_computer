@@ -4,8 +4,6 @@ Main voice computer client that integrates all components.
 
 import asyncio
 import logging
-import sys
-from io import StringIO
 from typing import Optional, List, Dict, Any
 
 from .voice_interface import VoiceInterface
@@ -14,7 +12,7 @@ from .data_types import Messages, Utterance
 from .tool_handler import ToolHandler
 from .mcp_connector import MCPStdioConnector
 from .config import Config
-from .streaming_display import stream_colored_to_console, stream_with_tts_to_console
+from .streaming_display import stream_colored_to_console_with_tts, stream_colored_to_console
 from .speaker import TTSSpeaker
 from .entailer import Entailer
 
@@ -96,7 +94,9 @@ class VoiceComputerClient:
         except Exception as e:
             _logger.warning(f"Failed to initialize TTSSpeaker: {e}")
             self.tts_speaker = None
-        
+
+        self._initialize_models()
+
         _logger.info("VoiceComputerClient initialized")
     
     def _initialize_mcp_tools(self) -> None:
@@ -299,8 +299,7 @@ Instructions:
                 
                 # Play activation sound when conversation starts
                 await self.voice_interface._play_activation_sound()
-                
-                await self.voice_interface.output("Voice assistant ready. How can I help you?")
+                await self.voice_interface.output("How can I help you?")
             
             # Inner loop: Handle conversation until exit command
             while conversation_is_on:
@@ -369,12 +368,14 @@ Instructions:
         """Main voice interaction loop with hotword activation."""
         _logger.info("Starting voice interaction loop...")
         
-        # Setup MCP tools
         await self._setup_mcp_tools()
-        
-        # Activate voice interface
         self.voice_interface.activate()
-        
+
+        if self.tts_speaker:
+            activation_text = "Please say the activation word to start the conversation."
+            self.tts_speaker.speak(activation_text)
+            _logger.info(activation_text)
+
         try:
             # Main loop: Handle voice activation cycles
             while True:
@@ -482,7 +483,7 @@ Instructions:
         # Create streaming display task
         if use_tts and self.tts_speaker:
             # Use TTS streaming for voice mode
-            display_task = await stream_with_tts_to_console(
+            display_task = await stream_colored_to_console_with_tts(
                 token_queue=token_queue,
                 tts_speaker=self.tts_speaker,
                 prefix="bot> ",
@@ -524,6 +525,18 @@ Instructions:
         except Exception as e:
             display_task.cancel()
             raise e
+
+    def _initialize_models(self):
+        # Initialize all the models and components
+        self.voice_interface.initialize()
+        self.entailer.initialize()
+        if self.tts_speaker:
+            self.tts_speaker.initialize()
+        else:
+            _logger.warning("TTSSpeaker is not initialized, TTS functionality will be disabled.")
+
+
+
 
 
 async def main():

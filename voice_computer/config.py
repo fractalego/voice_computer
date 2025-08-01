@@ -55,8 +55,8 @@ class Config:
             # Streaming configuration
             "streaming": {
                 "enabled": True,                # Enable streaming output
-                "token_batch_size": 4,          # Number of tokens to batch before displaying
-                "flush_delay": 0.1              # Delay in seconds between token batch checks
+                "token_batch_size": 6,          # Number of tokens to batch before displaying
+                "flush_delay": 0.05              # Delay in seconds between token batch checks
             }
         }
     
@@ -108,7 +108,7 @@ class ExampleConfig(Config):
 class JSONConfig(Config):
     """Configuration loaded from a JSON file."""
     
-    def __init__(self, json_path: str):
+    def __initinit__(self, json_path: str):
         self.json_path = Path(json_path)
         config_dict = self._load_from_json()
         super().__init__(config_dict)
@@ -159,8 +159,8 @@ def create_example_config_file(path: str) -> None:
         ],
         "streaming": {
             "enabled": True,
-            "token_batch_size": 4,
-            "flush_delay": 0.1
+            "token_batch_size": 6,
+            "flush_delay": 0.05
         }
     }
     
