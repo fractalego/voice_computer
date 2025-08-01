@@ -12,7 +12,9 @@ from .whisper_listener import WhisperListener
 from .ollama_client import OllamaClient
 from .mcp_connector import MCPTools, MCPStdioConnector
 from .data_types import Messages, Utterance, ClientResponse, ToolCall
-from .tool_agent import ToolAgent
+from .tool_handler import ToolHandler
+from .entailer import Entailer
+from .extractor import ArgumentExtractor
 
 __version__ = "1.0.0"
 __all__ = [
@@ -26,5 +28,7 @@ __all__ = [
     "Utterance",
     "ClientResponse", 
     "ToolCall",
-    "ToolAgent",
+    "ToolHandler",
+    "Entailer",
+    "ArgumentExtractor",
 ]

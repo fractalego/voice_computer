@@ -9,7 +9,7 @@ from typing import Optional, List, Dict, Any
 from .voice_interface import VoiceInterface
 from .ollama_client import OllamaClient
 from .data_types import Messages, Utterance
-from .tool_agent import ToolAgent
+from .tool_handler import ToolHandler
 from .mcp_connector import MCPStdioConnector
 from .config import Config
 
@@ -57,9 +57,12 @@ class VoiceComputerClient:
         # Initialize voice interface
         self.voice_interface = VoiceInterface(self.config)
         
-        # Initialize MCP tools and agent
+        # Initialize MCP tools and handler
         self.mcp_tools = []
-        self.tool_agent = None
+        self.tool_handler = None
+        
+        # Tool results queue (last 5 results)
+        self.tool_results_queue = []
         self._initialize_mcp_tools()
         
         _logger.info("VoiceComputerClient initialized")
@@ -100,8 +103,8 @@ class VoiceComputerClient:
                 _logger.error(f"Failed to get tools from connector: {e}")
         
         if tools:
-            self.tool_agent = ToolAgent(self.ollama_client, tools)
-            _logger.info(f"ToolAgent initialized with {len(tools)} MCP tool groups")
+            self.tool_handler = ToolHandler(self.ollama_client, tools, self.config)
+            _logger.info(f"ToolHandler initialized with {len(tools)} MCP tool groups")
         else:
             _logger.warning("No MCP tools available - running in basic mode")
     
@@ -115,25 +118,62 @@ class VoiceComputerClient:
         Returns:
             The response to the query
         """
-        if not self.tool_agent:
+        if not self.tool_handler:
             # Fallback to direct Ollama if no MCP tools
             messages = Messages(utterances=[
                 Utterance(role="user", content=query)
             ])
+            messages = self._add_tool_results_to_system_prompt(messages)
             response = await self.ollama_client.predict(messages)
             return response.message
         
         try:
+            # Execute relevant tools using the handler
+            tool_results = await self.tool_handler.handle_query(query)
+            
+            # Update tool results queue (keep only last 5)
+            self.tool_results_queue.extend(tool_results)
+            if len(self.tool_results_queue) > 5:
+                self.tool_results_queue = self.tool_results_queue[-5:]
+            
+            # Generate response using LLM with tool results context
             messages = Messages(utterances=[
                 Utterance(role="user", content=query)
             ])
+            messages = self._add_tool_results_to_system_prompt(messages)
             
-            response = await self.tool_agent.query(messages)
-            return response
+            response = await self.ollama_client.predict(messages)
+            return response.message
             
         except Exception as e:
             _logger.error(f"Error processing query with MCP: {e}")
             return f"I encountered an error: {str(e)}"
+    
+    def _add_tool_results_to_system_prompt(self, messages: Messages) -> Messages:
+        """Add recent tool results to the system prompt."""
+        if not self.tool_results_queue:
+            return messages
+        
+        # Build tool results context
+        tool_context = "Recent tool execution results:\n\n"
+        for i, result in enumerate(self.tool_results_queue):
+            tool_context += f"Tool Result {i+1}:\n"
+            tool_context += f"Query: {result.original_query}\n"
+            tool_context += f"Tool: {result.tool_description}\n"
+            tool_context += f"Result: {result.tool_result}\n\n"
+        
+        # Create system prompt with tool context
+        system_prompt = f"""You are a helpful voice assistant. Use the recent tool results below to provide informed responses to user queries.
+
+{tool_context}
+
+Instructions:
+1. Use the tool results to answer questions when relevant
+2. Reference specific tool results when helpful
+3. Be conversational and helpful
+4. If tool results don't contain relevant information, use your general knowledge"""
+        
+        return messages.add_system_prompt(system_prompt)
     
     async def run_voice_loop(self) -> None:
         """Main voice interaction loop."""

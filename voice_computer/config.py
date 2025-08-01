@@ -32,6 +32,7 @@ class Config:
             # Entailment model settings
             "entailment_model": "vectara/hallucination_evaluation_model",  # Hugging Face model ID
             "entailment_device": None,              # Auto-detect device if None (cuda/mps/cpu)
+            "entailment_threshold": 0.5,            # Minimum entailment score to run a tool
             
             # Ollama settings
             "ollama_host": "http://localhost:11434",
@@ -131,6 +132,7 @@ def create_example_config_file(path: str) -> None:
         "whisper_model": "fractalego/personal-whisper-distilled-model",
         "entailment_model": "vectara/hallucination_evaluation_model",
         "entailment_device": None,
+        "entailment_threshold": 0.5,
         "ollama_host": "http://localhost:11434",
         "ollama_model": "qwen2.5:32b",
         "mcp_servers": [
