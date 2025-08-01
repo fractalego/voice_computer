@@ -4,6 +4,8 @@ Main voice computer client that integrates all components.
 
 import asyncio
 import logging
+import sys
+from io import StringIO
 from typing import Optional, List, Dict, Any
 
 from .voice_interface import VoiceInterface
@@ -30,7 +32,12 @@ class SimpleConfig:
             "deactivate_sound": True,
             "ollama_host": "http://localhost:11434",
             "ollama_model": "qwen2.5:32b",
-            "mcp_servers": []
+            "mcp_servers": [],
+            "streaming": {
+                "enabled": True,
+                "token_batch_size": 4,
+                "flush_delay": 0.1
+            }
         }
     
     def get_value(self, key: str) -> Any:
@@ -75,7 +82,7 @@ class VoiceComputerClient:
             try:
                 connector = MCPStdioConnector(
                     command=server_config["path"],
-                    description=f"MCP server: {server_config['name']}",
+                    description=f"{server_config['name']}",
                     args=server_config.get("args", [])
                 )
                 
@@ -108,12 +115,13 @@ class VoiceComputerClient:
         else:
             _logger.warning("No MCP tools available - running in basic mode")
     
-    async def process_query(self, query: str) -> str:
+    async def process_query(self, query: str, use_streaming: bool = True) -> str:
         """
         Process a user query using MCP tools if available.
         
         Args:
             query: The user's query
+            use_streaming: Whether to use streaming output (default True)
             
         Returns:
             The response to the query
@@ -124,8 +132,12 @@ class VoiceComputerClient:
                 Utterance(role="user", content=query)
             ])
             messages = self._add_tool_results_to_system_prompt(messages)
-            response = await self.ollama_client.predict(messages)
-            return response.message
+            
+            if use_streaming and self._is_streaming_enabled():
+                return await self._process_streaming_query(messages)
+            else:
+                response = await self.ollama_client.predict(messages)
+                return response.message
         
         try:
             # Execute relevant tools using the handler
@@ -142,8 +154,11 @@ class VoiceComputerClient:
             ])
             messages = self._add_tool_results_to_system_prompt(messages)
             
-            response = await self.ollama_client.predict(messages)
-            return response.message
+            if use_streaming and self._is_streaming_enabled():
+                return await self._process_streaming_query(messages)
+            else:
+                response = await self.ollama_client.predict(messages)
+                return response.message
             
         except Exception as e:
             _logger.error(f"Error processing query with MCP: {e}")
@@ -202,8 +217,8 @@ Instructions:
                         await self.voice_interface.output("Goodbye!")
                         break
                     
-                    # Process with agent
-                    response = await self.process_query(user_input)
+                    # Process with agent (disable streaming for voice mode)
+                    response = await self.process_query(user_input, use_streaming=False)
                     
                     # Speak response
                     if response:
@@ -246,14 +261,13 @@ Instructions:
                         print("bot> Goodbye!")
                         break
                     
-                    # Process query
-                    response = await self.process_query(user_input)
+                    # Process query with streaming
+                    print("bot> ", end='', flush=True)
+                    response = await self.process_query(user_input, use_streaming=True)
                     
-                    # Print response
-                    if response:
-                        print(f"bot> {response}")
-                    else:
-                        print("bot> I'm sorry, I couldn't process that.")
+                    # Response is already printed via streaming, just add newline if needed
+                    if not response:
+                        print("I'm sorry, I couldn't process that.")
                         
                 except KeyboardInterrupt:
                     _logger.info("Text loop interrupted by user")
@@ -290,6 +304,84 @@ Instructions:
         self._initialize_mcp_tools()
         
         _logger.info(f"Added MCP server: {name}")
+    
+    def _is_streaming_enabled(self) -> bool:
+        """Check if streaming is enabled in configuration."""
+        streaming_config = self.config.get_value("streaming") or {}
+        return streaming_config.get("enabled", True)
+    
+    def _get_token_batch_size(self) -> int:
+        """Get the configured token batch size."""
+        streaming_config = self.config.get_value("streaming") or {}
+        return streaming_config.get("token_batch_size", 4)
+    
+    def _get_flush_delay(self) -> float:
+        """Get the configured flush delay."""
+        streaming_config = self.config.get_value("streaming") or {}
+        return streaming_config.get("flush_delay", 0.1)
+    
+    async def _process_streaming_query(self, messages: Messages) -> str:
+        """Process query with streaming output to console."""
+        token_queue = asyncio.Queue()
+        token_batch = []
+        batch_size = self._get_token_batch_size()
+        flush_delay = self._get_flush_delay()
+        
+        async def display_tokens():
+            """Async task to display tokens in real-time as they arrive."""
+            stream_complete = False
+            
+            while not stream_complete:
+                try:
+                    # Wait for tokens with a timeout to check batching
+                    token = await asyncio.wait_for(token_queue.get(), timeout=flush_delay)
+                    
+                    if token is None:  # End of stream signal
+                        stream_complete = True
+                        # Display any remaining tokens
+                        if token_batch:
+                            remaining_text = ''.join(token_batch)
+                            print(remaining_text, end='', flush=True)
+                        print()  # New line after streaming is complete
+                        break
+                    
+                    # Add token to batch
+                    token_batch.append(token)
+                    
+                    # Display batch if it reaches the batch size
+                    if len(token_batch) >= batch_size:
+                        batch_text = ''.join(token_batch)
+                        print(batch_text, end='', flush=True)
+                        token_batch.clear()
+                        
+                except asyncio.TimeoutError:
+                    # Display partial batch on timeout if there are tokens waiting
+                    if token_batch:
+                        batch_text = ''.join(token_batch)
+                        print(batch_text, end='', flush=True)
+                        token_batch.clear()
+        
+        # Start both tasks concurrently
+        display_task = asyncio.create_task(display_tokens())
+        
+        try:
+            # Start the streaming prediction (this will populate the queue)
+            prediction_task = asyncio.create_task(
+                self.ollama_client.predict(
+                    messages,
+                    stream=True,
+                    token_queue=token_queue
+                )
+            )
+            
+            # Wait for both tasks to complete
+            response, _ = await asyncio.gather(prediction_task, display_task)
+            
+            return response.message
+            
+        except Exception as e:
+            display_task.cancel()
+            raise e
 
 
 async def main():

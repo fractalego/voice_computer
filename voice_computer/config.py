@@ -32,7 +32,7 @@ class Config:
             # Entailment model settings
             "entailment_model": "vectara/hallucination_evaluation_model",  # Hugging Face model ID
             "entailment_device": None,              # Auto-detect device if None (cuda/mps/cpu)
-            "entailment_threshold": 0.5,            # Minimum entailment score to run a tool
+            "entailment_threshold": 0.4,            # Minimum entailment score to run a tool
             
             # Ollama settings
             "ollama_host": "http://localhost:11434",
@@ -49,7 +49,14 @@ class Config:
                     "path": "python",
                     "args": ["-m", "voice_computer.default_mcp_server"]
                 }
-            ]
+            ],
+            
+            # Streaming configuration
+            "streaming": {
+                "enabled": True,                # Enable streaming output
+                "token_batch_size": 4,          # Number of tokens to batch before displaying
+                "flush_delay": 0.1              # Delay in seconds between token batch checks
+            }
         }
     
     def get_value(self, key: str) -> Any:
@@ -136,7 +143,7 @@ def create_example_config_file(path: str) -> None:
         "whisper_model": "fractalego/personal-whisper-distilled-model",
         "entailment_model": "vectara/hallucination_evaluation_model",
         "entailment_device": None,
-        "entailment_threshold": 0.5,
+        "entailment_threshold": 0.4,
         "ollama_host": "http://localhost:11434",
         "ollama_model": "qwen2.5:32b",
         "extractor_host": None,
@@ -147,7 +154,12 @@ def create_example_config_file(path: str) -> None:
                 "path": "python",
                 "args": ["-m", "voice_computer.default_mcp_server"]
             }
-        ]
+        ],
+        "streaming": {
+            "enabled": True,
+            "token_batch_size": 4,
+            "flush_delay": 0.1
+        }
     }
     
     with open(path, 'w', encoding='utf-8') as f:

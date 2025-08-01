@@ -133,6 +133,8 @@ class ToolHandler:
                 description = tool_info['combined_description']
                 
                 # Judge entailment: does the query entail that this tool should be used?
+                query = "The user asked: " + query
+                description = "The user wants to use: " + description
                 score = self.entailer.judge(query, description)
                 
                 scored_tools.append((tool_info, score))
@@ -162,7 +164,11 @@ class ToolHandler:
             )
             
             _logger.debug(f"Extracted arguments for {tool_info['name']}: {arguments}")
-            
+
+            if not arguments:
+                _logger.warning(f"No valid arguments extracted for tool {tool_info['name']}")
+                return None
+
             # Execute the tool
             tool_group = tool_info['group']
             result = await tool_group.call_tool(tool_info['name'], arguments)

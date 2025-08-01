@@ -5,7 +5,10 @@ Ollama client for communicating with Ollama API.
 import requests
 import json
 import logging
-from typing import Optional, List
+import asyncio
+from io import StringIO
+from typing import Optional, List, AsyncGenerator, Callable
+from concurrent.futures import ThreadPoolExecutor
 
 from .data_types import Messages, Tool, ClientResponse, ToolCall
 
@@ -60,6 +63,8 @@ class OllamaClient:
         messages: Messages,
         stop_sequences: Optional[List[str]] = None,
         tools: Optional[List[Tool]] = None,
+        stream: bool = False,
+        token_queue: Optional[asyncio.Queue] = None,
     ) -> ClientResponse:
         """
         Make a prediction request to Ollama.
@@ -68,6 +73,8 @@ class OllamaClient:
             messages: The conversation messages
             stop_sequences: Optional list of stop sequences
             tools: Optional list of tools available to the model
+            stream: Whether to stream the response
+            token_queue: Asyncio queue for streaming tokens in real-time
             
         Returns:
             ClientResponse containing the response message and any tool calls
@@ -91,17 +98,22 @@ class OllamaClient:
             "options": {
                 "stop": stop_sequences,
             },
-            "stream": False,
+            "stream": stream,
             "tools": tools_dict,
         }
 
         try:
-            response = requests.post(
-                f"{self.host}/api/chat",
-                headers=headers,
-                data=json.dumps(data),
-                timeout=600,
-            )
+            if stream and token_queue:
+                return await self._handle_async_streaming_response(
+                    f"{self.host}/api/chat", headers, data, token_queue
+                )
+            else:
+                response = requests.post(
+                    f"{self.host}/api/chat",
+                    headers=headers,
+                    data=json.dumps(data),
+                    timeout=600,
+                )
         except requests.exceptions.ConnectionError as e:
             error_msg = f"Connection refused to Ollama at {self.host}. Please ensure Ollama is running and accessible."
             _logger.error(error_msg)
@@ -151,3 +163,101 @@ class OllamaClient:
             raise OllamaResponseError(
                 self.host, self.model, response.status_code, response.text
             )
+    
+    async def _handle_async_streaming_response(
+        self,
+        url: str,
+        headers: dict,
+        data: dict,
+        token_queue: asyncio.Queue,
+    ) -> ClientResponse:
+        """
+        Handle streaming response from Ollama using async queue.
+        
+        Args:
+            url: The API endpoint URL
+            headers: Request headers
+            data: Request data
+            token_queue: Asyncio queue to put tokens into as they arrive
+            
+        Returns:
+            ClientResponse with complete message
+        """
+        def _stream_request(loop):
+            """Run the streaming request in a thread."""
+            try:
+                response = requests.post(
+                    url,
+                    headers=headers,
+                    data=json.dumps(data),
+                    timeout=600,
+                    stream=True
+                )
+                
+                if response.status_code != 200:
+                    raise OllamaResponseError(
+                        self.host, self.model, response.status_code, response.text
+                    )
+                
+                complete_message = ""
+                tool_calls = None
+                
+                for line in response.iter_lines(decode_unicode=True):
+                    if line.strip():
+                        chunk_data = json.loads(line)
+                        
+                        if "message" in chunk_data and "content" in chunk_data["message"]:
+                            token = chunk_data["message"]["content"]
+                            complete_message += token
+                            
+                            # Put token in queue for immediate display
+                            asyncio.run_coroutine_threadsafe(
+                                token_queue.put(token), 
+                                loop
+                            )
+                        
+                        # Check for tool calls in the final chunk
+                        if (
+                            chunk_data.get("done", False) and
+                            "message" in chunk_data and
+                            "tool_calls" in chunk_data["message"]
+                        ):
+                            tool_calls = []
+                            for tool_call_data in chunk_data["message"]["tool_calls"]:
+                                tool_call = ToolCall(
+                                    id=tool_call_data.get("id", ""),
+                                    type=tool_call_data.get("type", "function"),
+                                    function=tool_call_data.get("function", {}),
+                                )
+                                tool_calls.append(tool_call)
+                        
+                        # Break if done
+                        if chunk_data.get("done", False):
+                            break
+                
+                # Signal completion
+                asyncio.run_coroutine_threadsafe(
+                    token_queue.put(None),  # None signals end of stream
+                    loop
+                )
+                
+                return ClientResponse(message=complete_message, tool_calls=tool_calls)
+                
+            except requests.exceptions.ConnectionError as e:
+                raise OllamaConnectionError(self.host, self.model, e)
+            except requests.exceptions.Timeout as e:
+                raise OllamaConnectionError(self.host, self.model, e)
+            except requests.exceptions.RequestException as e:
+                raise OllamaConnectionError(self.host, self.model, e)
+            except (json.JSONDecodeError, KeyError) as e:
+                error_msg = f"Invalid streaming response format from Ollama at {self.host}: {e}"
+                _logger.error(error_msg)
+                raise OllamaResponseError(
+                    self.host, self.model, 200, str(e)
+                )
+        
+        # Run the streaming request in a thread to avoid blocking
+        loop = asyncio.get_event_loop()
+        with ThreadPoolExecutor() as executor:
+            future = loop.run_in_executor(executor, _stream_request, loop)
+            return await future

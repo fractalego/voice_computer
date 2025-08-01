@@ -143,7 +143,7 @@ class Entailer:
                         logits = outputs.logits
                     
                     probs = torch.softmax(logits, dim=-1)
-                    score = float(probs[0, 0])
+                    score = float(probs[0, 1]) if probs.shape[-1] >= 2 else float(probs[0, 0])
                     return score
             else:
                 # Standard entailment models
