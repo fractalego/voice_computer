@@ -14,8 +14,9 @@ from .whisper_listener import WhisperListener
 
 _logger = logging.getLogger(__name__)
 
-COLOR_START = "\033[94m"
-COLOR_END = "\033[0m"
+COLOR_START = "\033[94m"  # Blue
+COLOR_END = "\033[0m"      # Reset
+COLOR_GREEN = "\033[92m"   # Green
 
 
 class VoiceInterface:

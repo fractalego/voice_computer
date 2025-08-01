@@ -298,7 +298,7 @@ Instructions:
             while conversation_is_on:
                 try:
                     # Get voice input (skipping hotword detection since we're already activated)
-                    from .voice_interface import COLOR_START, COLOR_END
+                    from .voice_interface import COLOR_START, COLOR_END, COLOR_GREEN
                     print(f"{COLOR_START}✨ Listening for your command...{COLOR_END}")
                     user_input = ""
                     while not user_input:
@@ -311,14 +311,14 @@ Instructions:
 
                     # Simple quality check - if text seems too short or unclear, ask for repeat
                     while self.voice_interface._is_listening and self.voice_interface._not_good_enough(user_input):
-                        print(f"{COLOR_START}user> {user_input}{COLOR_END}")
+                        print(f"{COLOR_GREEN}user> {user_input}{COLOR_END}")
                         await self.voice_interface.output("Sorry? Can you repeat?")
                         user_input = await self.voice_interface._listener.input()
                         user_input = self.voice_interface._remove_activation_word_and_normalize(user_input)
 
                     user_input = user_input.lower().capitalize()
                     user_input = self.voice_interface._remove_unclear(user_input)
-                    print(f"{COLOR_START}user> {user_input}{COLOR_END}")
+                    print(f"{COLOR_GREEN}user> {user_input}{COLOR_END}")
                     
                     if not user_input or not user_input.strip():
                         continue
