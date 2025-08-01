@@ -29,6 +29,10 @@ class Config:
             # Whisper model settings
             "whisper_model": "fractalego/personal-whisper-distilled-model",  # Hugging Face model ID
             
+            # Entailment model settings
+            "entailment_model": "vectara/hallucination_evaluation_model",  # Hugging Face model ID
+            "entailment_device": None,              # Auto-detect device if None (cuda/mps/cpu)
+            
             # Ollama settings
             "ollama_host": "http://localhost:11434",
             "ollama_model": "qwen2.5:32b",          # or any model you have in Ollama
@@ -73,7 +77,7 @@ class ExampleConfig(Config):
         config["mcp_servers"] = [
             # Default stdio MCP server
             {
-                "name": "default",
+                "name": "math operations",
                 "path": "python",
                 "args": ["-m", "voice_computer.default_mcp_server"]
             },
@@ -125,6 +129,8 @@ def create_example_config_file(path: str) -> None:
         "waking_up_sound": True,
         "deactivate_sound": True,
         "whisper_model": "fractalego/personal-whisper-distilled-model",
+        "entailment_model": "vectara/hallucination_evaluation_model",
+        "entailment_device": None,
         "ollama_host": "http://localhost:11434",
         "ollama_model": "qwen2.5:32b",
         "mcp_servers": [
