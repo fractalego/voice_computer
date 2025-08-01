@@ -7,7 +7,6 @@ import logging
 import sys
 import os
 import time
-from unittest.mock import patch
 
 # Add the parent directory to the path so we can import voice_computer
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))

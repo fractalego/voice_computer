@@ -6,7 +6,6 @@ import logging
 import torch
 import numpy as np
 import pyaudio
-import threading
 
 from typing import Optional, Callable
 from transformers import SpeechT5Processor, SpeechT5ForTextToSpeech, SpeechT5HifiGan
@@ -135,8 +134,6 @@ class TTSSpeaker(BaseSpeaker):
         
         try:
             with torch.no_grad():
-                _logger.debug(f"Speaker embedding shape: {self._speaker_embedding.shape}, dtype: {self._speaker_embedding.dtype}")
-                
                 # Process text input
                 inputs = self._processor(text=text, return_tensors="pt")
                 
@@ -217,27 +214,3 @@ class TTSSpeaker(BaseSpeaker):
                 pass
 
 
-class PrintAndSpeak():
-    def __init__(self, tts_speaker: TTSSpeaker) -> None:
-        self._tts_speaker = tts_speaker
-        self._tts_speaker.initialize()
-        self._lock = threading.Lock()
-
-    def __call__(self, text: str):
-        """
-        Print the text and speak it using the TTS speaker.
-
-        Args:
-            text: Text to print and speak
-        """
-        print(text, end='', flush=True
-        def speak_thread(to_speak: str):
-            with self._lock:
-                try:
-                    self._tts_speaker.speak(to_speak)
-                except Exception as e:
-                    _logger.error(f"Error speaking text '{to_speak}': {e}")
-
-        # Start speaking in a separate thread to avoid blocking
-        speak_thread = threading.Thread(target=speak_thread, args=(text,))
-        speak_thread.start()

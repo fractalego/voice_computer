@@ -6,7 +6,7 @@ import asyncio
 import logging
 from typing import Optional, Callable
 
-from voice_computer.speaker.tts_speaker import PrintAndSpeak, TTSSpeaker
+from voice_computer.speaker.tts_speaker import TTSSpeaker
 
 _logger = logging.getLogger(__name__)
 
@@ -131,6 +131,7 @@ class ColoredStreamingDisplay(StreamingDisplay):
         color_start: str = "\033[94m",  # Blue
         color_end: str = "\033[0m",     # Reset
         prefix: str = "",
+        speaker_handler: Optional[TTSSpeaker] = None,
         **kwargs
     ):
         """
@@ -148,7 +149,8 @@ class ColoredStreamingDisplay(StreamingDisplay):
         self.color_end = color_end
         self.prefix = prefix
         self._first_output = True
-        
+        self._speaker_handler = speaker_handler
+
         super().__init__(
             batch_size=batch_size,
             flush_delay=flush_delay,
@@ -165,6 +167,9 @@ class ColoredStreamingDisplay(StreamingDisplay):
             output = text
         
         print(output, end='', flush=True)
+        # If a speaker handler is provided, use it to speak the text
+        if self._speaker_handler:
+            self._speaker_handler.speak(text)
     
     def _default_end_handler(self) -> None:
         """Colored end handler that resets color."""
@@ -222,7 +227,7 @@ async def stream_colored_to_console_with_tts(
         color_start=color_start,
         color_end=color_end,
         prefix=prefix,
-        output_handler=PrintAndSpeak(tts_speaker)
+        speaker_handler=tts_speaker,
     )
 
     return asyncio.create_task(display.display_stream(token_queue))
