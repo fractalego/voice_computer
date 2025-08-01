@@ -15,16 +15,32 @@ _logger = logging.getLogger(__name__)
 class ArgumentExtractor:
     """Extracts tool arguments from natural language using LLM."""
     
-    def __init__(self, ollama_client: OllamaClient, config: Optional[Config] = None):
+    def __init__(self, ollama_client: Optional[OllamaClient] = None, config: Optional[Config] = None):
         """
         Initialize the argument extractor.
         
         Args:
-            ollama_client: Ollama client for LLM communication
+            ollama_client: Ollama client for LLM communication (optional, will create from config if None)
             config: Configuration object (optional)
         """
-        self.client = ollama_client
         self.config = config
+        
+        # Determine which client to use
+        if ollama_client is not None:
+            # Use provided client
+            self.client = ollama_client
+        elif config is not None:
+            # Create extractor-specific client from config
+            extractor_host = config.get_value("extractor_host") or config.get_value("ollama_host")
+            extractor_model = config.get_value("extractor_model") or config.get_value("ollama_model")
+            
+            self.client = OllamaClient(
+                model=extractor_model,
+                host=extractor_host
+            )
+            _logger.info(f"Created extractor-specific OllamaClient with model {extractor_model} at {extractor_host}")
+        else:
+            raise ValueError("Either ollama_client or config must be provided")
     
     async def extract_arguments(self, query: str, tool_name: str, tool_description: str, input_schema: Dict[str, Any]) -> Dict[str, Any]:
         """

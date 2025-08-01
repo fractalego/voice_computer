@@ -38,6 +38,10 @@ class Config:
             "ollama_host": "http://localhost:11434",
             "ollama_model": "qwen2.5:32b",          # or any model you have in Ollama
             
+            # Extractor LLM settings (for argument extraction from queries)
+            "extractor_host": None,                 # Use ollama_host if None
+            "extractor_model": None,                # Use ollama_model if None
+            
             # MCP servers configuration
             "mcp_servers": [
                 {
@@ -135,6 +139,8 @@ def create_example_config_file(path: str) -> None:
         "entailment_threshold": 0.5,
         "ollama_host": "http://localhost:11434",
         "ollama_model": "qwen2.5:32b",
+        "extractor_host": None,
+        "extractor_model": None,
         "mcp_servers": [
             {
                 "name": "default",

@@ -38,7 +38,7 @@ class ToolHandler:
         
         # Initialize entailer and extractor
         self.entailer = Entailer(config)
-        self.extractor = ArgumentExtractor(ollama_client, config)
+        self.extractor = ArgumentExtractor(config=config)
         
         # Get threshold from config
         self.threshold = config.get_value("entailment_threshold") if config else 0.5
