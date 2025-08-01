@@ -20,7 +20,8 @@ class Config:
             "listener_model": {
                 "listener_silence_timeout": 2,      # seconds of silence before stopping recording
                 "listener_volume_threshold": 0.6,   # minimum volume to trigger recording
-                "listener_hotword_logp": -8         # hotword detection threshold
+                "listener_hotword_logp": -8,        # hotword detection threshold
+                "microphone_device_index": None     # specific microphone device index (None for default)
             },
             "activation_hotwords": ["computer"],    # default activation hotwords
             "waking_up_sound": True,                # play sound when activating

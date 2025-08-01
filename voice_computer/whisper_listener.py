@@ -46,6 +46,9 @@ class WhisperListener:
             self.volume_threshold = listener_config.get("listener_volume_threshold", 0.6)
             self.original_volume_threshold = self.volume_threshold
             self.hotword_threshold = listener_config.get("listener_hotword_logp", -8)
+            self.device_index = listener_config.get("microphone_device_index", None)
+        else:
+            self.device_index = None
         
         # Whisper model settings
         self.whisper_model_name = "fractalego/personal-whisper-distilled-model"
@@ -69,6 +72,26 @@ class WhisperListener:
         self._ending_tokens = None
         
         _logger.info(f"WhisperListener initialized with model: {self.whisper_model_name}")
+        
+        # Debug: List available audio devices in debug mode
+        self._log_available_audio_devices()
+
+    def _log_available_audio_devices(self):
+        """Log available audio input devices for debugging."""
+        try:
+            device_count = self.p.get_device_count()
+            _logger.debug(f"Available audio devices ({device_count} total):")
+            
+            for i in range(device_count):
+                info = self.p.get_device_info_by_index(i)
+                if info['maxInputChannels'] > 0:  # Only input devices
+                    _logger.debug(f"  Input Device {i}: {info['name']} (channels: {info['maxInputChannels']}, sample rate: {info['defaultSampleRate']})")
+                    
+            default_input = self.p.get_default_input_device_info()
+            _logger.debug(f"Default input device: {default_input['name']} (index: {default_input['index']})")
+            
+        except Exception as e:
+            _logger.debug(f"Error listing audio devices: {e}")
 
     def _initialize_whisper(self):
         """Initialize the Whisper model and processor (adapted from WhisperHandler)."""
@@ -148,6 +171,19 @@ class WhisperListener:
         """Activate the audio stream."""
         if not self.is_active:
             try:
+                # Get device info for debugging
+                if self.device_index is not None:
+                    try:
+                        device_info = self.p.get_device_info_by_index(self.device_index)
+                        _logger.debug(f"Using configured microphone device: {device_info['name']} (index: {self.device_index}, channels: {device_info['maxInputChannels']}, sample rate: {device_info['defaultSampleRate']})")
+                    except Exception as e:
+                        _logger.warning(f"Error getting info for configured device {self.device_index}: {e}. Falling back to default.")
+                        self.device_index = None
+                
+                if self.device_index is None:
+                    default_input_device = self.p.get_default_input_device_info()
+                    _logger.debug(f"Using default microphone device: {default_input_device['name']} (index: {default_input_device['index']}, channels: {default_input_device['maxInputChannels']}, sample rate: {default_input_device['defaultSampleRate']})")
+                
                 self.stream = self.p.open(
                     format=self.format,
                     channels=self.channels,
@@ -155,6 +191,7 @@ class WhisperListener:
                     input=True,
                     output=False,
                     frames_per_buffer=self.chunk,
+                    input_device_index=self.device_index,  # Use configured device or None for default
                 )
                 self.is_active = True
                 _logger.debug("WhisperListener audio stream activated")
@@ -365,9 +402,16 @@ class WhisperListener:
                 transcription = self.processor.batch_decode(
                     output.sequences, skip_special_tokens=True
                 )[0]
-                score = output.sequences_scores
-                logp = None
                 
+                # Handle different versions of transformers output format
+                score = 0.0
+                if hasattr(output, 'sequences_scores') and output.sequences_scores is not None:
+                    score = output.sequences_scores
+                elif hasattr(output, 'scores') and output.scores is not None:
+                    # Alternative: calculate score from logits if available
+                    score = sum(s.max().item() for s in output.scores) / len(output.scores)
+                
+                logp = None
                 if hotword_tokens is not None:
                     logp = self._compute_logp(hotword_tokens, input_features)
 

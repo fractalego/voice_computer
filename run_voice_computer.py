@@ -17,6 +17,53 @@ from voice_computer import VoiceComputerClient
 from voice_computer.config import load_config, create_example_config_file
 
 
+def list_audio_devices():
+    """List available audio input devices."""
+    try:
+        import pyaudio
+        
+        p = pyaudio.PyAudio()
+        device_count = p.get_device_count()
+        
+        print(f"Available audio input devices ({device_count} total):")
+        print("=" * 60)
+        
+        input_devices = []
+        for i in range(device_count):
+            info = p.get_device_info_by_index(i)
+            if info['maxInputChannels'] > 0:  # Only input devices
+                input_devices.append((i, info))
+                print(f"Device {i}: {info['name']}")
+                print(f"  Channels: {info['maxInputChannels']}")
+                print(f"  Sample Rate: {info['defaultSampleRate']}")
+                print(f"  Host API: {p.get_host_api_info_by_index(info['hostApi'])['name']}")
+                print()
+        
+        if input_devices:
+            try:
+                default_input = p.get_default_input_device_info()
+                print(f"Default input device: {default_input['name']} (index: {default_input['index']})")
+                print()
+                print("To use a specific device, add this to your config file:")
+                print('"listener_model": {')
+                print('  "microphone_device_index": <device_index>')
+                print('}')
+            except Exception as e:
+                print(f"Could not get default input device: {e}")
+        else:
+            print("No input devices found!")
+            
+        p.terminate()
+        return 0
+        
+    except ImportError:
+        print("Error: pyaudio is not installed. Install it with: pip install pyaudio")
+        return 1
+    except Exception as e:
+        print(f"Error listing audio devices: {e}")
+        return 1
+
+
 def setup_logging(level=logging.INFO, log_file="voice_computer.log"):
     """Setup logging configuration."""
     # Create formatters
@@ -59,6 +106,7 @@ Examples:
   %(prog)s --test                       # Run in text-only mode for testing
   %(prog)s --config=my_config.json      # Use custom configuration file
   %(prog)s --create-config=config.json  # Create example configuration file
+  %(prog)s --list-devices               # List available audio input devices
   %(prog)s --verbose                    # Enable debug logging
         """
     )
@@ -95,12 +143,22 @@ Examples:
         help="Log file path (default: voice_computer.log)"
     )
     
+    parser.add_argument(
+        "--list-devices",
+        action="store_true",
+        help="List available audio input devices and exit"
+    )
+    
     return parser.parse_args()
 
 
 async def main():
     """Main entry point."""
     args = parse_args()
+    
+    # Handle list devices command
+    if args.list_devices:
+        return list_audio_devices()
     
     # Handle config file creation
     if args.create_config:
