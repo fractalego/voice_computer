@@ -60,13 +60,14 @@ class VoiceInterface:
         """Add hotwords to the listener."""
         self._listener.add_hotwords(hotwords)
 
-    async def output(self, text: str, silent: bool = False) -> None:
+    async def output(self, text: str, silent: bool = False, skip_print: bool = False) -> None:
         """
         Output text via speech synthesis.
         
         Args:
             text: The text to speak
             silent: If True, only print to console without speaking
+            skip_print: If True, only speak without printing (useful when text was already printed via streaming)
         """
         if not text:
             return
@@ -76,7 +77,10 @@ class VoiceInterface:
             return
 
         self._listener.activate()
-        print(COLOR_START + "bot> " + text + COLOR_END)
+        
+        # Print text unless skip_print is True (e.g., when streaming already displayed it)
+        if not skip_print:
+            print(COLOR_START + "bot> " + text + COLOR_END)
         
         # Speak the text using system TTS
         await self._speak_text(text)

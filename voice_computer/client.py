@@ -277,11 +277,11 @@ Instructions:
                 # Process the immediate instruction
                 response = await self.process_query(immediate_instruction, use_streaming=True, use_colored_output=True)
                 
-                # Speak response
+                # Speak response (skip_print=True since streaming already displayed it)
                 if response:
-                    await self.voice_interface.output(response)
+                    await self.voice_interface.output(response, skip_print=True)
                 else:
-                    await self.voice_interface.output("I'm sorry, I couldn't process that.")
+                    await self.voice_interface.output("I'm sorry, I couldn't process that.", skip_print=True)
                 
                 # Continue to next hotword detection cycle (no persistent conversation)
                 return True
@@ -334,11 +334,11 @@ Instructions:
                     # Process with agent (enable streaming with colors for console output in voice mode)
                     response = await self.process_query(user_input, use_streaming=True, use_colored_output=True)
                     
-                    # Speak response
+                    # Speak response (skip_print=True since streaming already displayed it)
                     if response:
-                        await self.voice_interface.output(response)
+                        await self.voice_interface.output(response, skip_print=True)
                     else:
-                        await self.voice_interface.output("I'm sorry, I couldn't process that.")
+                        await self.voice_interface.output("I'm sorry, I couldn't process that.", skip_print=True)
                         
                 except KeyboardInterrupt:
                     _logger.info("Voice loop interrupted by user")
