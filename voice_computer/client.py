@@ -192,23 +192,64 @@ Instructions:
         
         return messages.add_system_prompt(system_prompt)
     
-    async def run_voice_loop(self) -> None:
-        """Main voice interaction loop."""
-        _logger.info("Starting voice interaction loop...")
+    async def _handle_voice_activation_cycle(self) -> bool:
+        """
+        Handle a single voice activation cycle (hotword detection + conversation).
         
-        # Setup MCP tools
-        await self._setup_mcp_tools()
-        
-        # Activate voice interface
-        self.voice_interface.activate()
-        
+        Returns:
+            True to continue the main loop, False to exit
+        """
         try:
-            await self.voice_interface.output("Voice assistant ready. How can I help you?")
+            # Wait for hotword to activate conversation
+            _logger.info("Waiting for activation hotword...")
+            detected_hotword, immediate_instruction = await self.voice_interface._wait_for_hotword()
             
-            while True:
+            # Check if this is a single-command activation or persistent conversation
+            if immediate_instruction:
+                # Single-command mode: process the instruction immediately and return to hotword listening
+                _logger.info(f"Single-command mode activated with instruction: '{immediate_instruction}'")
+                
+                # Process the immediate instruction
+                response = await self.process_query(immediate_instruction, use_streaming=True, use_colored_output=True)
+                
+                # Speak response
+                if response:
+                    await self.voice_interface.output(response)
+                else:
+                    await self.voice_interface.output("I'm sorry, I couldn't process that.")
+                
+                # Continue to next hotword detection cycle (no persistent conversation)
+                return True
+            else:
+                # Persistent conversation mode
+                conversation_is_on = True
+                await self.voice_interface.output("Voice assistant ready. How can I help you?")
+            
+            # Inner loop: Handle conversation until exit command
+            while conversation_is_on:
                 try:
-                    # Get voice input
-                    user_input = await self.voice_interface.input()
+                    # Get voice input (skipping hotword detection since we're already activated)
+                    from .voice_interface import COLOR_START, COLOR_END
+                    print(f"{COLOR_START}✨ Listening for your command...{COLOR_END}")
+                    user_input = ""
+                    while not user_input:
+                        user_input = await self.voice_interface._listener.input()
+                        if not user_input or not user_input.strip() or user_input.strip() == "[unclear]":
+                            continue
+                        
+                        user_input = self.voice_interface._remove_activation_word_and_normalize(user_input)
+                        break
+
+                    # Simple quality check - if text seems too short or unclear, ask for repeat
+                    while self.voice_interface._is_listening and self.voice_interface._not_good_enough(user_input):
+                        print(f"{COLOR_START}user> {user_input}{COLOR_END}")
+                        await self.voice_interface.output("Sorry? Can you repeat?")
+                        user_input = await self.voice_interface._listener.input()
+                        user_input = self.voice_interface._remove_activation_word_and_normalize(user_input)
+
+                    user_input = user_input.lower().capitalize()
+                    user_input = self.voice_interface._remove_unclear(user_input)
+                    print(f"{COLOR_START}user> {user_input}{COLOR_END}")
                     
                     if not user_input or not user_input.strip():
                         continue
@@ -217,6 +258,7 @@ Instructions:
                     exit_commands = ['exit', 'quit', 'stop', 'goodbye', 'bye']
                     if user_input.lower().strip() in exit_commands:
                         await self.voice_interface.output("Goodbye!")
+                        conversation_is_on = False  # End conversation, return to hotword listening
                         break
                     
                     # Process with agent (enable streaming with colors for console output in voice mode)
@@ -230,10 +272,38 @@ Instructions:
                         
                 except KeyboardInterrupt:
                     _logger.info("Voice loop interrupted by user")
-                    break
+                    return False
                 except Exception as e:
                     _logger.error(f"Error in voice loop: {e}")
                     await self.voice_interface.output("Sorry, I encountered an error.")
+            
+            return True
+            
+        except KeyboardInterrupt:
+            _logger.info("Voice loop interrupted by user")
+            return False
+        except Exception as e:
+            _logger.error(f"Error in outer voice loop: {e}")
+            # Continue to next hotword detection cycle
+            await asyncio.sleep(1)
+            return True
+    
+    async def run_voice_loop(self) -> None:
+        """Main voice interaction loop with hotword activation."""
+        _logger.info("Starting voice interaction loop...")
+        
+        # Setup MCP tools
+        await self._setup_mcp_tools()
+        
+        # Activate voice interface
+        self.voice_interface.activate()
+        
+        try:
+            # Main loop: Handle voice activation cycles
+            while True:
+                should_continue = await self._handle_voice_activation_cycle()
+                if not should_continue:
+                    break
                     
         finally:
             self.voice_interface.deactivate()

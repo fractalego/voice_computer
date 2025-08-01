@@ -117,13 +117,15 @@ class VoiceInterface:
         
         return self._remove_unclear(text)
     
-    async def _wait_for_hotword(self) -> str:
+    async def _wait_for_hotword(self) -> tuple[str, str]:
         """
         Wait in a loop until a hotword is detected.
         Uses continuous audio monitoring with hotword detection.
         
         Returns:
-            The detected hotword
+            Tuple of (detected_hotword, instruction_text)
+            If instruction found with hotword, returns both
+            If only hotword found, returns (hotword, "")
         """
         _logger.debug("Starting hotword detection loop...")
         
@@ -135,18 +137,20 @@ class VoiceInterface:
             
             _logger.debug(f"Transcribed audio for hotword check: '{text}'")
             
-            # Check if any configured hotword appears in the transcription
-            detected_hotword = self._check_hotword_in_text(text)
+            # Check if any configured hotword appears with potential instruction
+            detected_hotword, instruction = self._check_hotword_with_instruction(text)
             if detected_hotword:
                 _logger.info(f"Hotword '{detected_hotword}' detected in transcription!")
-                return detected_hotword
+                if instruction:
+                    _logger.info(f"Instruction detected with hotword: '{instruction}'")
+                return (detected_hotword, instruction)
             
             # Also check using the advanced logp-based detection if available
             try:
                 hotword = await self._listener.get_hotword_if_present()
                 if hotword:
                     _logger.info(f"Hotword '{hotword}' detected via logp analysis!")
-                    return hotword
+                    return (hotword, "")
             except Exception as e:
                 _logger.debug(f"Logp-based hotword detection failed: {e}")
             
@@ -182,6 +186,54 @@ class VoiceInterface:
                 return hotword
         
         return ""
+    
+    def _check_hotword_with_instruction(self, text: str) -> tuple[str, str]:
+        """
+        Check if hotword appears with an instruction in the same text.
+        
+        Args:
+            text: The transcribed text to check
+            
+        Returns:
+            Tuple of (detected_hotword, instruction_text)
+            If no hotword found, returns ("", "")
+            If hotword found but no instruction, returns (hotword, "")
+        """
+        if not text:
+            return ("", "")
+        
+        text_lower = text.lower().strip()
+        
+        # Get configured hotwords
+        activation_hotwords = []
+        if self.config:
+            activation_hotwords = self.config.get_value("activation_hotwords") or ["computer"]
+        else:
+            activation_hotwords = ["computer"]
+        
+        # Check if any hotword appears in the text
+        for hotword in activation_hotwords:
+            hotword_lower = hotword.lower()
+            if hotword_lower in text_lower:
+                # Find the position of the hotword
+                hotword_pos = text_lower.find(hotword_lower)
+                
+                # Extract text after the hotword
+                after_hotword = text[hotword_pos + len(hotword):].strip()
+                
+                # Remove common filler words at the beginning
+                filler_words = ["please", "can you", "could you", "would you"]
+                for filler in filler_words:
+                    if after_hotword.lower().startswith(filler):
+                        after_hotword = after_hotword[len(filler):].strip()
+                
+                # If there's meaningful text after the hotword, it's an instruction
+                if after_hotword and len(after_hotword) > 2:
+                    return (hotword, after_hotword)
+                else:
+                    return (hotword, "")
+        
+        return ("", "")
 
     def bot_has_spoken(self, to_set: Optional[bool] = None) -> bool:
         """Get or set whether the bot has spoken."""
