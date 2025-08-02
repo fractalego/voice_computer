@@ -130,12 +130,12 @@ class ToolHandler:
         for tool_info in tool_table:
             try:
                 # Use combined description for better entailment scoring
-                description = tool_info['combined_description']
+                description = tool_info['description'].strip()
                 
                 # Judge entailment: does the query entail that this tool should be used?
                 # Create modified versions without changing the original query
                 entailment_query = "The user asked: " + query
-                entailment_description = "The user wants to use: " + description
+                entailment_description = "The user wants to: " + description
                 score = self.entailer.judge(entailment_query, entailment_description)
                 
                 scored_tools.append((tool_info, score))
