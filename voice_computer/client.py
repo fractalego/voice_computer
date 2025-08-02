@@ -84,6 +84,10 @@ class VoiceComputerClient:
         
         # Tool results queue (last 5 results)
         self.tool_results_queue = []
+        
+        # Conversation history (list of utterances)
+        self.conversation_history = []
+        
         self._initialize_mcp_tools()
         
         # Initialize entailer for exit detection
@@ -100,6 +104,12 @@ class VoiceComputerClient:
         self._initialize_models()
 
         _logger.info("VoiceComputerClient initialized")
+    
+    def _reset_conversation_state(self):
+        """Reset conversation history and tool results when conversation ends."""
+        _logger.info("Resetting conversation state - clearing history and tool results")
+        self.conversation_history.clear()
+        self.tool_results_queue.clear()
     
     def _initialize_mcp_tools(self) -> None:
         """Initialize MCP tools from configuration."""
@@ -154,18 +164,23 @@ class VoiceComputerClient:
         Returns:
             The response to the query
         """
+        # Add user query to conversation history
+        self.conversation_history.append(Utterance(role="user", content=query))
+        
         if not self.tool_handler:
             # Fallback to direct Ollama if no MCP tools
-            messages = Messages(utterances=[
-                Utterance(role="user", content=query)
-            ])
+            messages = self._build_messages_with_history()
             messages = self._add_tool_results_to_system_prompt(messages)
             
             if use_streaming and self._is_streaming_enabled():
-                return await self._process_streaming_query(messages, use_colored_output, use_tts)
+                response = await self._process_streaming_query(messages, use_colored_output, use_tts)
             else:
-                response = await self.ollama_client.predict(messages)
-                return response.message
+                response_obj = await self.ollama_client.predict(messages)
+                response = response_obj.message
+            
+            # Add assistant response to conversation history
+            self.conversation_history.append(Utterance(role="assistant", content=response))
+            return response
         
         try:
             # Execute relevant tools using the handler
@@ -176,21 +191,34 @@ class VoiceComputerClient:
             if len(self.tool_results_queue) > 5:
                 self.tool_results_queue = self.tool_results_queue[-5:]
             
-            # Generate response using LLM with tool results context
-            messages = Messages(utterances=[
-                Utterance(role="user", content=query)
-            ])
+            # Generate response using LLM with conversation history and tool results context
+            messages = self._build_messages_with_history()
             messages = self._add_tool_results_to_system_prompt(messages)
             
             if use_streaming and self._is_streaming_enabled():
-                return await self._process_streaming_query(messages, use_colored_output, use_tts)
+                response = await self._process_streaming_query(messages, use_colored_output, use_tts)
             else:
-                response = await self.ollama_client.predict(messages)
-                return response.message
+                response_obj = await self.ollama_client.predict(messages)
+                response = response_obj.message
+            
+            # Add assistant response to conversation history
+            self.conversation_history.append(Utterance(role="assistant", content=response))
+            return response
             
         except Exception as e:
             _logger.error(f"Error processing query with MCP: {e}")
-            return f"I encountered an error: {str(e)}"
+            error_response = f"I encountered an error: {str(e)}"
+            # Add error response to conversation history
+            self.conversation_history.append(Utterance(role="assistant", content=error_response))
+            return error_response
+    
+    def _build_messages_with_history(self) -> Messages:
+        """Build Messages object with conversation history."""
+        # Keep only recent conversation history (last 10 exchanges to prevent context overflow)
+        max_history = 20  # 10 user + 10 assistant messages
+        recent_history = self.conversation_history[-max_history:] if len(self.conversation_history) > max_history else self.conversation_history
+        
+        return Messages(utterances=recent_history)
     
     def _add_tool_results_to_system_prompt(self, messages: Messages) -> Messages:
         """Add recent tool results to the system prompt."""
@@ -335,6 +363,8 @@ Instructions:
                     # Handle exit commands using entailer
                     if self._is_exit_command(user_input):
                         await self.voice_interface.output("Goodbye!")
+                        # Reset conversation state when conversation ends
+                        self._reset_conversation_state()
                         # Play deactivation sound when conversation ends
                         await self.voice_interface._play_deactivation_sound()
                         conversation_is_on = False  # End conversation, return to hotword listening
@@ -416,6 +446,8 @@ Instructions:
                     # Handle exit commands using entailer
                     if self._is_exit_command(user_input):
                         print("bot> Goodbye!")
+                        # Reset conversation state when conversation ends
+                        self._reset_conversation_state()
                         break
                     
                     # Process query with streaming (streaming display will handle "bot> " prefix)

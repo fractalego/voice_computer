@@ -12,6 +12,7 @@ import pyaudio
 from typing import Optional
 
 from .base_speaker import BaseSpeaker
+from .number_conversion_to_words import convert_numbers_to_words
 from ..speaker_embeddings import get_default_speaker_embedding
 from ..model_factory import get_model_factory
 
@@ -40,7 +41,7 @@ class TTSSpeaker(BaseSpeaker):
         # Audio playback setup
         self._pyaudio = None
         self._sample_rate = 16000  # Default sample rate for SpeechT5
-        self._shaved_float_margin = 20
+        self._shaved_float_margin = 256
         self._audio_queue = []
 
         _logger.info(f"TTSSpeaker created with model {model_name} on device {self.device}")
@@ -124,7 +125,9 @@ class TTSSpeaker(BaseSpeaker):
         """
         if not self.initialized:
             self.initialize()
-        
+
+        text = convert_numbers_to_words(text)
+
         try:
             with torch.no_grad():
                 # Process text input
@@ -184,6 +187,7 @@ class TTSSpeaker(BaseSpeaker):
             batch_text: Text to synthesize
         """
         try:
+            batch_text = convert_numbers_to_words(batch_text)
             # Process text input
             inputs = self._processor(text=batch_text + " ... ", return_tensors="pt")
             input_ids = inputs["input_ids"].to(self.device)

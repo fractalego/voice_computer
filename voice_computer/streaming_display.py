@@ -7,6 +7,16 @@ import logging
 import threading
 
 from typing import Optional, Callable
+
+# Utility function to check if a value is numeric
+def is_numeric(value):
+    """Check if a value is numeric."""
+    try:
+        float(value)
+        return True
+    except (ValueError, TypeError):
+        return False
+
 from voice_computer.speaker.tts_speaker import TTSSpeaker
 
 _logger = logging.getLogger(__name__)
@@ -86,7 +96,7 @@ class StreamingDisplay:
                 token_batch.append(token)
                 
                 # Display batch if it reaches the batch size
-                if len(token_batch) >= self.batch_size:
+                if len(token_batch) >= self.batch_size and not is_numeric(token_batch[-1]):
                     batch_text = ''.join(token_batch)
                     self.output_handler(batch_text)
                     token_batch.clear()
