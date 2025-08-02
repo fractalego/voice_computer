@@ -133,9 +133,10 @@ class ToolHandler:
                 description = tool_info['combined_description']
                 
                 # Judge entailment: does the query entail that this tool should be used?
-                query = "The user asked: " + query
-                description = "The user wants to use: " + description
-                score = self.entailer.judge(query, description)
+                # Create modified versions without changing the original query
+                entailment_query = "The user asked: " + query
+                entailment_description = "The user wants to use: " + description
+                score = self.entailer.judge(entailment_query, entailment_description)
                 
                 scored_tools.append((tool_info, score))
                 
