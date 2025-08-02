@@ -136,7 +136,7 @@ class ToolHandler:
                 # Create modified versions without changing the original query
                 entailment_query = "The user asked: " + query
                 entailment_description = "The user wants to: " + description
-                score = self.entailer.judge(entailment_query, entailment_description)
+                score = self.entailer.judge(entailment_description, entailment_query)
                 
                 scored_tools.append((tool_info, score))
                 
@@ -166,8 +166,8 @@ class ToolHandler:
             
             _logger.debug(f"Extracted arguments for {tool_info['name']}: {arguments}")
 
-            if not arguments:
-                _logger.warning(f"No valid arguments extracted for tool {tool_info['name']}")
+            # Check if tool execution should proceed based on argument requirements
+            if not self._should_execute_tool(tool_info, arguments):
                 return None
 
             # Execute the tool
@@ -184,6 +184,41 @@ class ToolHandler:
         except Exception as e:
             _logger.error(f"Error executing tool {tool_info['name']}: {e}")
             raise
+    
+    def _should_execute_tool(self, tool_info: Dict[str, Any], arguments: Dict[str, Any]) -> bool:
+        """
+        Determine if a tool should be executed based on its argument requirements.
+        
+        Args:
+            tool_info: Tool information including input schema
+            arguments: Extracted arguments from the query
+            
+        Returns:
+            True if the tool should be executed, False otherwise
+        """
+        if arguments is None:
+            _logger.warning(f"No valid arguments extracted for tool {tool_info['name']}")
+            return False
+        
+        input_schema = tool_info.get('input_schema', {})
+        required_params = input_schema.get('required', [])
+        properties = input_schema.get('properties', {})
+        
+        # If tool has no parameters defined, empty arguments are fine
+        if not properties:
+            _logger.debug(f"Tool {tool_info['name']} requires no parameters, proceeding with execution")
+            return True
+        
+        # If tool has required parameters, check if they were extracted
+        if required_params:
+            missing_required = [param for param in required_params if param not in arguments]
+            if missing_required:
+                _logger.warning(f"Tool {tool_info['name']} missing required parameters: {missing_required}")
+                return False
+        
+        # If tool has optional parameters only, empty arguments are acceptable
+        _logger.debug(f"Tool {tool_info['name']} argument validation passed")
+        return True
     
     def get_tool_summary(self) -> str:
         """Get a summary of available tools."""
