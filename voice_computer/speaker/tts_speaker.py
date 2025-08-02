@@ -41,7 +41,7 @@ class TTSSpeaker(BaseSpeaker):
         # Audio playback setup
         self._pyaudio = None
         self._sample_rate = 16000  # Default sample rate for SpeechT5
-        self._shaved_float_margin = 256
+        self._shaved_float_margin = 512
         self._audio_queue = []
 
         _logger.info(f"TTSSpeaker created with model {model_name} on device {self.device}")

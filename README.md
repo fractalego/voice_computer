@@ -162,15 +162,19 @@ python run_voice_computer.py --config=production.json --verbose
 
 ### Built-in Default MCP Server
 
-The system includes a **built-in default MCP server** with basic tools:
+The system includes a **built-in math MCP server** with basic math tools:
 
 ```bash
-# Start the default server (runs on http://localhost:8080)
+# Test the math server
 python start_default_mcp_server.py
 ```
 
-**Available tools:**
-- `add_two_numbers(lhs: int, rhs: int)`: Calculate the sum of two integers
+**Available math tools:**
+- `add_two_numbers(lhs: number, rhs: number)`: Calculate the sum of two numbers
+- `subtract_two_numbers(lhs: number, rhs: number)`: Calculate the difference of two numbers (lhs - rhs)
+- `multiply_two_numbers(lhs: number, rhs: number)`: Calculate the product of two numbers
+- `divide_two_numbers(lhs: number, rhs: number)`: Calculate the division of two numbers (lhs / rhs)
+- `square_root(number: number)`: Calculate the square root of a number
 
 ### External MCP Servers
 

@@ -46,9 +46,9 @@ class Config:
             # MCP servers configuration
             "mcp_servers": [
                 {
-                    "name": "default",
+                    "name": "math",
                     "path": "python",
-                    "args": ["-m", "voice_computer.default_mcp_server"]
+                    "args": ["-m", "voice_computer.mcp_servers.math_mcp_server"]
                 }
             ],
             
@@ -93,11 +93,11 @@ class ExampleConfig(Config):
         
         # Add example MCP servers
         config["mcp_servers"] = [
-            # Default stdio MCP server
+            # Math stdio MCP server
             {
                 "name": "math operations",
                 "path": "python",
-                "args": ["-m", "voice_computer.default_mcp_server"]
+                "args": ["-m", "voice_computer.mcp_servers.math_mcp_server"]
             },
             # Filesystem MCP server example (commented out)
             # {
@@ -157,9 +157,9 @@ def create_example_config_file(path: str) -> None:
         "extractor_model": None,
         "mcp_servers": [
             {
-                "name": "default",
+                "name": "math",
                 "path": "python",
-                "args": ["-m", "voice_computer.default_mcp_server"]
+                "args": ["-m", "voice_computer.mcp_servers.math_mcp_server"]
             }
         ],
         "streaming": {
