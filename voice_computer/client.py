@@ -7,7 +7,6 @@ import logging
 from typing import Optional, List, Dict, Any
 
 from .voice_interface import VoiceInterface
-from .ollama_client import OllamaClient
 from .data_types import Messages, Utterance
 from .tool_handler import ToolHandler
 from .mcp_connector import MCPStdioConnector
@@ -16,6 +15,7 @@ from .streaming_display import stream_colored_to_console_with_tts, stream_colore
 from .speaker import TTSSpeaker
 from .entailer import Entailer
 from .model_factory import get_model_factory
+from .prompt import get_voice_assistant_system_prompt, format_tool_context
 
 _logger = logging.getLogger(__name__)
 
@@ -222,27 +222,9 @@ class VoiceComputerClient:
     
     def _add_tool_results_to_system_prompt(self, messages: Messages) -> Messages:
         """Add recent tool results to the system prompt."""
-        if not self.tool_results_queue:
-            return messages
-        
-        # Build tool results context
-        tool_context = "Recent tool execution results:\n\n"
-        for i, result in enumerate(self.tool_results_queue):
-            tool_context += f"Tool Result {i+1}:\n"
-            tool_context += f"Query: {result.original_query}\n"
-            tool_context += f"Tool: {result.tool_description}\n"
-            tool_context += f"Result: {result.tool_result}\n\n"
-        
-        # Create system prompt with tool context
-        system_prompt = f"""You are a helpful voice assistant. Use the recent tool results below to provide informed responses to user queries.
-
-{tool_context}
-
-Instructions:
-1. Use the tool results to answer questions when relevant
-2. Reference specific tool results when helpful
-3. Be conversational and helpful
-4. If tool results don't contain relevant information, use your general knowledge"""
+        # Format tool context and create system prompt
+        tool_context = format_tool_context(self.tool_results_queue)
+        system_prompt = get_voice_assistant_system_prompt(tool_context)
         
         return messages.add_system_prompt(system_prompt)
     

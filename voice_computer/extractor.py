@@ -9,6 +9,7 @@ from .config import Config
 from .ollama_client import OllamaClient
 from .data_types import Messages
 from .model_factory import get_model_factory
+from .prompt import get_argument_extraction_system_prompt, format_parameter_descriptions
 
 _logger = logging.getLogger(__name__)
 
@@ -83,41 +84,14 @@ class ArgumentExtractor:
     
     def _build_extraction_prompt(self, tool_name: str, tool_description: str, input_schema: Dict[str, Any]) -> str:
         """Build the system prompt for argument extraction."""
-        
         # Extract required and optional parameters from schema
         properties = input_schema.get("properties", {})
         required_params = input_schema.get("required", [])
         
-        param_descriptions = []
-        for param_name, param_info in properties.items():
-            param_type = param_info.get("type", "string")
-            param_desc = param_info.get("description", "No description available")
-            is_required = param_name in required_params
-            
-            required_str = " (REQUIRED)" if is_required else " (optional)"
-            param_descriptions.append(f"- {param_name} ({param_type}){required_str}: {param_desc}")
+        # Format parameter descriptions
+        params_text = format_parameter_descriptions(properties, required_params)
         
-        params_text = "\n".join(param_descriptions) if param_descriptions else "No parameters required"
-        
-        return f"""You are an argument extraction assistant. Your job is to extract tool arguments from natural language queries.
-
-Tool Information:
-- Name: {tool_name}
-- Description: {tool_description}
-
-Parameters:
-{params_text}
-
-Instructions:
-1. Analyze the user's query and extract the relevant arguments for this tool
-2. Return ONLY a valid JSON object with the extracted arguments
-3. Use the exact parameter names from the schema
-4. If a required parameter cannot be determined from the query, use a reasonable default or null
-5. If an optional parameter is not mentioned in the query, omit it from the response
-6. Do not include any explanation, just the JSON object
-
-Example response format:
-{{"param1": "value1", "param2": 123, "param3": true}}"""
+        return get_argument_extraction_system_prompt(tool_name, tool_description, params_text)
 
     def _parse_arguments_response(self, response: str) -> Dict[str, Any]:
         """Parse the LLM response to extract JSON arguments."""
