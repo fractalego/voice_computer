@@ -162,11 +162,12 @@ python run_voice_computer.py --config=production.json --verbose
 
 ### Built-in Default MCP Server
 
-The system includes a **built-in math MCP server** with basic math tools:
+The system includes **built-in MCP servers** with essential tools:
 
+#### Math Server
 ```bash
 # Test the math server
-python start_default_mcp_server.py
+python -m voice_computer.mcp_servers.math_mcp_server
 ```
 
 **Available math tools:**
@@ -175,6 +176,18 @@ python start_default_mcp_server.py
 - `multiply_two_numbers(lhs: number, rhs: number)`: Calculate the product of two numbers
 - `divide_two_numbers(lhs: number, rhs: number)`: Calculate the division of two numbers (lhs / rhs)
 - `square_root(number: number)`: Calculate the square root of a number
+
+#### Time Server
+```bash
+# Test the time server
+python -m voice_computer.mcp_servers.time_mcp_server
+```
+
+**Available time tools:**
+- `current_time()`: Get the current time in HH:MM:SS format
+- `current_date()`: Get the current date in YYYY-MM-DD format
+- `current_day_of_week()`: Get the current day of the week
+- `current_datetime()`: Get the current date and time in a readable format
 
 ### External MCP Servers
 

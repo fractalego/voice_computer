@@ -49,6 +49,11 @@ class Config:
                     "name": "math",
                     "path": "python",
                     "args": ["-m", "voice_computer.mcp_servers.math_mcp_server"]
+                },
+                {
+                    "name": "time",
+                    "path": "python",
+                    "args": ["-m", "voice_computer.mcp_servers.time_mcp_server"]
                 }
             ],
             
@@ -98,6 +103,12 @@ class ExampleConfig(Config):
                 "name": "math operations",
                 "path": "python",
                 "args": ["-m", "voice_computer.mcp_servers.math_mcp_server"]
+            },
+            # Time stdio MCP server
+            {
+                "name": "time operations",
+                "path": "python",
+                "args": ["-m", "voice_computer.mcp_servers.time_mcp_server"]
             },
             # Filesystem MCP server example (commented out)
             # {
@@ -160,6 +171,11 @@ def create_example_config_file(path: str) -> None:
                 "name": "math",
                 "path": "python",
                 "args": ["-m", "voice_computer.mcp_servers.math_mcp_server"]
+            },
+            {
+                "name": "time",
+                "path": "python",
+                "args": ["-m", "voice_computer.mcp_servers.time_mcp_server"]
             }
         ],
         "streaming": {
