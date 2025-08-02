@@ -50,7 +50,10 @@ class SimpleConfig:
                 "I'm done",
                 "that's all"
             ],
-            "exit_entailment_threshold": 0.7
+            "exit_entailment_threshold": 0.7,
+            "facts": [
+                "The name of this chatbot is 'Computer'"
+            ]
         }
     
     def get_value(self, key: str) -> Any:
@@ -222,9 +225,10 @@ class VoiceComputerClient:
     
     def _add_tool_results_to_system_prompt(self, messages: Messages) -> Messages:
         """Add recent tool results to the system prompt."""
-        # Format tool context and create system prompt
+        # Format tool context and get facts from config
         tool_context = format_tool_context(self.tool_results_queue)
-        system_prompt = get_voice_assistant_system_prompt(tool_context)
+        facts = self.config.get_value("facts") or []
+        system_prompt = get_voice_assistant_system_prompt(tool_context, facts)
         
         return messages.add_system_prompt(system_prompt)
     
