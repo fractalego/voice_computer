@@ -10,6 +10,7 @@ from typing import Optional
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 from transformers import logging as transformers_logging
 from .config import Config
+from .model_factory import get_model_factory
 
 _logger = logging.getLogger(__name__)
 
@@ -47,61 +48,28 @@ class Entailer:
             return "cpu"
     
     def initialize(self):
-        """Load the model and tokenizer."""
+        """Load the model and tokenizer using model factory."""
         if self.initialized:
             return
             
-        _logger.info(f"Loading entailment model {self.model_name} on device {self.device}")
+        _logger.info(f"Initializing entailment model {self.model_name} on device {self.device}")
         
         # Temporarily suppress transformers warnings about unsupported generation flags
         original_verbosity = transformers_logging.get_verbosity()
         transformers_logging.set_verbosity_error()
         
         try:
-            self.model = AutoModelForSequenceClassification.from_pretrained(
-                self.model_name, 
-                trust_remote_code=True
+            # Get cached model from factory
+            model_factory = get_model_factory()
+            self.model, self.tokenizer, self.device = model_factory.get_entailment_model(
+                self.model_name, self.device
             )
             
-            # Handle special case for vectara model which has custom tokenizer
-            if "vectara/hallucination_evaluation_model" in self.model_name:
-                # For vectara model, we need to access the tokenizer differently
-                # The model contains the tokenizer, not as a separate component
-                try:
-                    # Try to get tokenizer from model object
-                    if hasattr(self.model, 'tokenizer'):
-                        self.tokenizer = self.model.tokenizer
-                    elif hasattr(self.model, 'config') and hasattr(self.model.config, 'tokenizer'):
-                        self.tokenizer = self.model.config.tokenizer
-                    else:
-                        # For this model, we might need to manually create the tokenizer
-                        # Let's use T5 tokenizer as base since it's likely T5-based
-                        from transformers import T5Tokenizer
-                        self.tokenizer = T5Tokenizer.from_pretrained("t5-base")
-                        _logger.warning("Using T5 base tokenizer as fallback for vectara model")
-                except Exception as e:
-                    _logger.error(f"Failed to load tokenizer for vectara model: {e}")
-                    # Final fallback - use a basic BERT tokenizer
-                    from transformers import BertTokenizer
-                    self.tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
-                    _logger.warning("Using BERT base tokenizer as final fallback for vectara model")
-            else:
-                self.tokenizer = AutoTokenizer.from_pretrained(
-                    self.model_name,
-                    trust_remote_code=True
-                )
-            
-            # Move model to device and set to eval mode
-            self.model = self.model.to(self.device)
-            if hasattr(self.model, 'bfloat16') and self.device != "cpu":
-                self.model = self.model.bfloat16()
-            self.model.eval()
-            
             self.initialized = True
-            _logger.info(f"Entailment model {self.model_name} loaded successfully on {self.device}")
+            _logger.info(f"Entailment model {self.model_name} initialized successfully using model factory")
             
         except Exception as e:
-            _logger.error(f"Failed to load entailment model {self.model_name}: {e}")
+            _logger.error(f"Failed to initialize entailment model {self.model_name}: {e}")
             raise
         finally:
             # Restore original transformers verbosity

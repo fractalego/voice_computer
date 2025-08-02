@@ -15,6 +15,7 @@ from .data_types import Messages, Utterance, ClientResponse, ToolCall
 from .tool_handler import ToolHandler
 from .entailer import Entailer
 from .extractor import ArgumentExtractor
+from .model_factory import get_model_factory, ModelFactory
 
 __version__ = "1.0.0"
 __all__ = [
@@ -31,4 +32,6 @@ __all__ = [
     "ToolHandler",
     "Entailer",
     "ArgumentExtractor",
+    "ModelFactory",
+    "get_model_factory",
 ]

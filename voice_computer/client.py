@@ -15,6 +15,7 @@ from .config import Config
 from .streaming_display import stream_colored_to_console_with_tts, stream_colored_to_console
 from .speaker import TTSSpeaker
 from .entailer import Entailer
+from .model_factory import get_model_factory
 
 _logger = logging.getLogger(__name__)
 
@@ -67,8 +68,9 @@ class VoiceComputerClient:
     def __init__(self, config: Optional[Config] = None):
         self.config = config or Config()
         
-        # Initialize Ollama client
-        self.ollama_client = OllamaClient(
+        # Initialize Ollama client using model factory
+        model_factory = get_model_factory()
+        self.ollama_client = model_factory.get_ollama_client(
             model=self.config.get_value("ollama_model"),
             host=self.config.get_value("ollama_host")
         )

@@ -8,6 +8,7 @@ from typing import Dict, Any, Optional
 from .config import Config
 from .ollama_client import OllamaClient
 from .data_types import Messages
+from .model_factory import get_model_factory
 
 _logger = logging.getLogger(__name__)
 
@@ -30,15 +31,16 @@ class ArgumentExtractor:
             # Use provided client
             self.client = ollama_client
         elif config is not None:
-            # Create extractor-specific client from config
+            # Get cached client from factory
             extractor_host = config.get_value("extractor_host") or config.get_value("ollama_host")
             extractor_model = config.get_value("extractor_model") or config.get_value("ollama_model")
             
-            self.client = OllamaClient(
+            model_factory = get_model_factory()
+            self.client = model_factory.get_ollama_client(
                 model=extractor_model,
                 host=extractor_host
             )
-            _logger.info(f"Created extractor-specific OllamaClient with model {extractor_model} at {extractor_host}")
+            _logger.info(f"Using cached OllamaClient for extractor with model {extractor_model} at {extractor_host}")
         else:
             raise ValueError("Either ollama_client or config must be provided")
     

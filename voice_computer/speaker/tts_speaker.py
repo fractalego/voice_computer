@@ -11,9 +11,9 @@ import pyaudio
 
 from typing import Optional
 
-from transformers import SpeechT5Processor, SpeechT5ForTextToSpeech, SpeechT5HifiGan
 from .base_speaker import BaseSpeaker
 from ..speaker_embeddings import get_default_speaker_embedding
+from ..model_factory import get_model_factory
 
 _logger = logging.getLogger(__name__)
 
@@ -40,6 +40,7 @@ class TTSSpeaker(BaseSpeaker):
         # Audio playback setup
         self._pyaudio = None
         self._sample_rate = 16000  # Default sample rate for SpeechT5
+        self._shaved_float_margin = 20
         self._audio_queue = []
 
         _logger.info(f"TTSSpeaker created with model {model_name} on device {self.device}")
@@ -85,33 +86,21 @@ class TTSSpeaker(BaseSpeaker):
                 return embedding
     
     def initialize(self):
-        """Initialize the TTS model and audio system."""
+        """Initialize the TTS model and audio system using model factory."""
         if self.initialized:
             return
             
-        _logger.info(f"Loading TTS model {self.model_name} on device {self.device}")
+        _logger.info(f"Initializing TTS model {self.model_name} on device {self.device}")
         
         try:
-            # Initialize SpeechT5 components
+            # Get cached model from factory
+            model_factory = get_model_factory()
+            self._processor, self._model, self._vocoder, self.device = model_factory.get_tts_model(
+                self.model_name, self.device
+            )
+            
+            # Set torch dtype for speaker embedding consistency
             self.torch_dtype = torch.bfloat16 if self.device != "cpu" else torch.float32
-            
-            # Load processor, model, and vocoder
-            self._processor = SpeechT5Processor.from_pretrained(self.model_name)
-            self._model = SpeechT5ForTextToSpeech.from_pretrained(self.model_name)
-            
-            # Load HiFi-GAN vocoder for SpeechT5
-            self._vocoder = SpeechT5HifiGan.from_pretrained("microsoft/speecht5_hifigan")
-            
-            # Move models to device and set dtype
-            self._model = self._model.to(self.device)
-            self._vocoder = self._vocoder.to(self.device)
-            
-            if self.device != "cpu":
-                self._model = self._model.to(dtype=self.torch_dtype)
-                self._vocoder = self._vocoder.to(dtype=self.torch_dtype)
-            
-            self._model.eval()
-            self._vocoder.eval()
             
             # Get speaker embedding using standard approach
             self._speaker_embedding = self._load_speaker_embedding()
@@ -120,7 +109,7 @@ class TTSSpeaker(BaseSpeaker):
             self._pyaudio = pyaudio.PyAudio()
             
             self.initialized = True
-            _logger.info(f"TTS model {self.model_name} loaded successfully on {self.device}")
+            _logger.info(f"TTS model {self.model_name} initialized successfully using model factory")
             
         except Exception as e:
             _logger.error(f"Failed to initialize TTS model {self.model_name}: {e}")
@@ -199,7 +188,7 @@ class TTSSpeaker(BaseSpeaker):
             inputs = self._processor(text=batch_text + " ... ", return_tensors="pt")
             input_ids = inputs["input_ids"].to(self.device)
             speech = self._model.generate_speech(input_ids, self._speaker_embedding, vocoder=self._vocoder)
-            self._audio_queue.append((speech.cpu(), batch_text))
+            self._audio_queue.append((speech.cpu()[:-self._shaved_float_margin], batch_text))
 
         except Exception as e:
             _logger.error(f"Error in TTS synthesis for batch: {e}")

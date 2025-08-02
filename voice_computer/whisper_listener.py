@@ -14,6 +14,7 @@ import torch._dynamo
 torch._dynamo.config.suppress_errors = True
 
 from transformers import WhisperProcessor, WhisperForConditionalGeneration
+from .model_factory import get_model_factory
 
 _logger = logging.getLogger(__name__)
 
@@ -147,20 +148,20 @@ class WhisperListener:
             _logger.debug(f"Error listing audio devices: {e}")
 
     def initialize_whisper(self):
-        """Initialize the Whisper model and processor (adapted from WhisperHandler)."""
+        """Initialize the Whisper model and processor using model factory."""
         if self.initialized:
             return
         
         try:
-            _logger.info(f"Loading Whisper model: {self.whisper_model_name}")
+            _logger.info(f"Initializing Whisper model: {self.whisper_model_name}")
             
-            # Determine device
-            self.device = "cuda" if torch.cuda.is_available() else "cpu"
+            # Get cached model from factory
+            model_factory = get_model_factory()
+            self.processor, self.model, self.device = model_factory.get_whisper_model(
+                self.whisper_model_name
+            )
+            
             _logger.info(f"Using device: {self.device}")
-            
-            # Load processor and model
-            self.processor = WhisperProcessor.from_pretrained(self.whisper_model_name)
-            self.model = WhisperForConditionalGeneration.from_pretrained(self.whisper_model_name)
             
             # Setup tokenizer tokens
             self._starting_tokens = self.processor.tokenizer.convert_tokens_to_ids(
@@ -170,22 +171,8 @@ class WhisperListener:
                 ["<|endoftext|>"]
             )
             
-            # Move model to device and optimize
-            self.model = self.model.to(self.device)
-            
-            # Use half precision for better performance (if using CUDA)
-            if self.device == "cuda":
-                self.model = self.model.half()
-            
-            # Compile model for better performance (PyTorch 2.0+)
-            try:
-                self.model = torch.compile(self.model, mode="reduce-overhead")
-                _logger.info("Model compiled successfully")
-            except Exception as e:
-                _logger.warning(f"Model compilation failed, continuing without: {e}")
-            
             self.initialized = True
-            _logger.info("Whisper model loaded and optimized successfully")
+            _logger.info("Whisper model initialized successfully using model factory")
             
         except Exception as e:
             _logger.error(f"Failed to initialize Whisper model: {e}")
