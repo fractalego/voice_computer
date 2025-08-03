@@ -2,13 +2,14 @@
 System prompts for the voice computer system.
 """
 
-def get_voice_assistant_system_prompt(tool_context: str = "", facts: list = None) -> str:
+def get_voice_assistant_system_prompt(tool_context: str = "", facts: list = None, available_tools: list = None) -> str:
     """
     Get the system prompt for the voice assistant.
     
     Args:
         tool_context: Optional context from recent tool execution results
         facts: Optional list of facts to include in the system prompt
+        available_tools: Optional list of available tool names
         
     Returns:
         The formatted system prompt
@@ -20,8 +21,14 @@ def get_voice_assistant_system_prompt(tool_context: str = "", facts: list = None
     if facts:
         facts_section = "\n\nKey Facts:\n" + "\n".join(f"- {fact}" for fact in facts)
     
+    # Add available tools section
+    tools_section = ""
+    if available_tools:
+        tools_section = "\n\nAvailable Tools:\n" + "\n".join(f"- {tool}" for tool in available_tools)
+        tools_section += "\n\nNote: You can suggest using these tools when appropriate for user requests."
+    
     if tool_context:
-        return f"""{base_prompt}{facts_section}
+        return f"""{base_prompt}{facts_section}{tools_section}
 
 Use the recent tool results below to provide informed responses to user queries. The last tools results are the latest.
 
@@ -31,9 +38,10 @@ Instructions:
 1. Use the tool results to answer questions when relevant
 2. Reference specific tool results when helpful
 3. Be conversational and helpful
-4. If tool results don't contain relevant information, use your general knowledge"""
+4. If tool results don't contain relevant information, use your general knowledge
+5. Suggest appropriate tools from the available tools list when they could help with the user's request"""
     
-    return f"{base_prompt}{facts_section}"
+    return f"{base_prompt}{facts_section}{tools_section}"
 
 
 def get_argument_extraction_system_prompt(tool_name: str, tool_description: str, params_text: str, facts: list = None) -> str:

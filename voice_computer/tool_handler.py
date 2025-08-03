@@ -310,6 +310,18 @@ class ToolHandler:
         
         return "\n".join(context_parts)
     
+    def get_available_tool_names(self) -> List[str]:
+        """Get a list of all available tool names."""
+        if not self.tools:
+            return []
+        
+        tool_names = []
+        for tool_group in self.tools:
+            for tool in tool_group.tools:
+                tool_names.append(tool.name)
+        
+        return tool_names
+    
     def get_tool_summary(self) -> str:
         """Get a summary of available tools."""
         if not self.tools:

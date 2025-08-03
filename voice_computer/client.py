@@ -241,7 +241,13 @@ class VoiceComputerClient:
         # Format tool context including failed tools and get facts from config
         tool_context = format_tool_context(self.tool_results_queue, self.failed_tools_queue)
         facts = self.config.get_value("facts") or []
-        system_prompt = get_voice_assistant_system_prompt(tool_context, facts)
+        
+        # Get available tool names from tool handler
+        available_tools = []
+        if self.tool_handler:
+            available_tools = self.tool_handler.get_available_tool_names()
+        
+        system_prompt = get_voice_assistant_system_prompt(tool_context, facts, available_tools)
         
         return messages.add_system_prompt(system_prompt)
     
