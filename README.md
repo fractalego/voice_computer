@@ -189,6 +189,26 @@ python -m voice_computer.mcp_servers.time_mcp_server
 - `current_day_of_week()`: Get the current day of the week
 - `current_datetime()`: Get the current date and time in a readable format
 
+#### Weather Server
+```bash
+# Set your API key first
+export WEATHER_API_KEY="your-weatherapi-key"
+
+# Test the weather server
+python -m voice_computer.mcp_servers.weather_mcp_server
+```
+
+**Available weather tools:**
+- `get_current_weather(location: str)`: Get current weather conditions for a location
+- `get_weather_forecast(location: str, days: int = 3)`: Get weather forecast (1-10 days)
+- `search_locations(query: str)`: Search for locations to get weather data
+- `get_weather_alerts(location: str)`: Get weather alerts for a location
+
+**Setup:**
+1. Get a free API key from [weatherapi.com](https://www.weatherapi.com/)
+2. Set the `WEATHER_API_KEY` environment variable
+3. Add the weather server to your configuration (see examples below)
+
 ### External MCP Servers
 
 You can integrate external MCP servers to extend functionality. Supported types include:
@@ -213,14 +233,53 @@ You can integrate external MCP servers to extend functionality. Supported types 
 }
 ```
 
-**Stdio-based servers:**
+**Built-in stdio servers:**
 ```json
 {
   "mcp_servers": [
     {
-      "name": "my-stdio-server",
-      "path": "path-to-mcp-server",
-      "args": ["--option", "value"]
+      "name": "math operations",
+      "path": "python",
+      "args": ["-m", "voice_computer.mcp_servers.math_mcp_server"]
+    },
+    {
+      "name": "time operations", 
+      "path": "python",
+      "args": ["-m", "voice_computer.mcp_servers.time_mcp_server"]
+    },
+    {
+      "name": "weather operations",
+      "path": "python", 
+      "args": ["-m", "voice_computer.mcp_servers.weather_mcp_server"],
+      "env_vars": {"WEATHER_API_KEY": "your-api-key-here"}
+    }
+  ]
+}
+```
+
+**External stdio servers:**
+```json
+{
+  "mcp_servers": [
+    {
+      "name": "filesystem",
+      "path": "mcp-server-filesystem",
+      "args": ["--root", "/tmp"]
+    }
+  ]
+}
+```
+
+**Environment Variables:**
+You can pass environment variables to MCP servers:
+```json
+{
+  "mcp_servers": [
+    {
+      "name": "weather",
+      "path": "python",
+      "args": ["-m", "voice_computer.mcp_servers.weather_mcp_server"],
+      "env_vars": {"WEATHER_API_KEY": "${WEATHER_API_KEY}"}
     }
   ]
 }

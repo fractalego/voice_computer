@@ -8,6 +8,8 @@ from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 from pydantic_ai.mcp import MCPServerStdio
 import logging
+import os
+import re
 
 _logger = logging.getLogger(__name__)
 
@@ -60,16 +62,39 @@ class MCPTools(BaseModel):
 class MCPStdioConnector:
     """MCP Connector for stdio-based servers using pydantic-ai"""
 
-    def __init__(self, command: str, description: str, args: Optional[List[str]] = None):
+    def __init__(self, command: str, description: str, args: Optional[List[str]] = None, env_vars: Optional[Dict[str, str]] = None):
         self._command = command
         self._description = description
-        self._args = args or []
+        self._args = self._expand_env_vars(args or [])
+        self._env_vars = env_vars or {}
         self._server: Optional[MCPServerStdio] = None
+
+    def _expand_env_vars(self, args: List[str]) -> List[str]:
+        """Expand environment variables in arguments.
+        
+        Supports ${VAR_NAME} and $VAR_NAME syntax.
+        """
+        expanded_args = []
+        for arg in args:
+            # Replace ${VAR_NAME} patterns
+            expanded_arg = re.sub(r'\$\{([^}]+)\}', lambda m: os.getenv(m.group(1), ''), arg)
+            # Replace $VAR_NAME patterns (word boundaries)
+            expanded_arg = re.sub(r'\$([A-Za-z_][A-Za-z0-9_]*)', lambda m: os.getenv(m.group(1), ''), expanded_arg)
+            expanded_args.append(expanded_arg)
+        return expanded_args
+
+    def _prepare_environment(self) -> Dict[str, str]:
+        """Prepare environment variables for the MCP server process."""
+        env = os.environ.copy()
+        env.update(self._env_vars)
+        return env
 
     async def get_tools(self) -> MCPTools:
         """Connect to MCP server and return Tool object with server and tool descriptions"""
         try:
-            self._server = MCPServerStdio(command=self._command, args=self._args)
+            # Prepare environment for the MCP server
+            env = self._prepare_environment()
+            self._server = MCPServerStdio(command=self._command, args=self._args, env=env)
             await self._server.__aenter__()
 
             # Get available tools

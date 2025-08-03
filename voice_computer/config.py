@@ -57,6 +57,13 @@ class Config:
                     "path": "python",
                     "args": ["-m", "voice_computer.mcp_servers.time_mcp_server"]
                 }
+                # Weather server (requires WEATHER_API_KEY environment variable)
+                # ,{
+                #     "name": "weather",
+                #     "path": "python",
+                #     "args": ["-m", "voice_computer.mcp_servers.weather_mcp_server"],
+                #     "env_vars": {"WEATHER_API_KEY": "your-api-key-here"}
+                # }
             ],
             
             # Streaming configuration
@@ -112,6 +119,13 @@ class ExampleConfig(Config):
                 "path": "python",
                 "args": ["-m", "voice_computer.mcp_servers.time_mcp_server"]
             },
+            # Weather MCP server (requires WEATHER_API_KEY environment variable)
+            # {
+            #     "name": "weather operations",
+            #     "path": "python",
+            #     "args": ["-m", "voice_computer.mcp_servers.weather_mcp_server"],
+            #     "env_vars": {"WEATHER_API_KEY": "your-api-key-here"}
+            # },
         ]
         
         return config

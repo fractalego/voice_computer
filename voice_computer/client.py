@@ -127,7 +127,8 @@ class VoiceComputerClient:
                 connector = MCPStdioConnector(
                     command=server_config["path"],
                     description=f"{server_config['name']}",
-                    args=server_config.get("args", [])
+                    args=server_config.get("args", []),
+                    env_vars=server_config.get("env_vars", {})
                 )
                 
                 # Get tools asynchronously (we'll do this in the run method)
