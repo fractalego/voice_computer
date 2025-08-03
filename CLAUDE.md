@@ -76,7 +76,7 @@ Voice Computer is a voice-driven assistant that integrates Whisper speech recogn
 - `voice_computer/config.py`: Configuration management and loading
 - `run_voice_computer.py`: Main execution script with argument parsing and logging
 
-- `tests/test*.py`: Unit tests for core functionality
+- `tests/test*.py`: Unit tests for core functionality (using unittest framework)
 
 ## Prerequisites and Dependencies
 

@@ -209,6 +209,29 @@ python -m voice_computer.mcp_servers.weather_mcp_server
 2. Set the `WEATHER_API_KEY` environment variable
 3. Add the weather server to your configuration (see examples below)
 
+#### Train Server
+```bash
+# Set your API credentials first
+export TRANSPORT_API_ID="your-transport-api-id"
+export TRANSPORT_API_KEY="your-transport-api-key"
+
+# Test the train server
+python -m voice_computer.mcp_servers.train_mcp_server
+```
+
+**Available train tools:**
+- `get_train_timetable_from_postcode(postcode: str, direction: str = "departures", limit: int = 5)`: Get train times from nearest station to a postcode
+- `find_stations_near_postcode(postcode: str, distance: int = 1000)`: Find train stations near a postcode
+- `get_station_departures(station_code: str, limit: int = 10)`: Get live departures from a station
+- `get_station_arrivals(station_code: str, limit: int = 10)`: Get live arrivals at a station
+- `search_station_codes(query: str)`: Search for train station codes by name
+
+**Setup:**
+1. Register at [transportapi.com](https://www.transportapi.com/) for a free API account
+2. Get your API ID and key from the developer dashboard
+3. Set the environment variables: `TRANSPORT_API_ID` and `TRANSPORT_API_KEY`
+4. Add the train server to your configuration (see examples below)
+
 ### External MCP Servers
 
 You can integrate external MCP servers to extend functionality. Supported types include:
@@ -252,6 +275,15 @@ You can integrate external MCP servers to extend functionality. Supported types 
       "path": "python", 
       "args": ["-m", "voice_computer.mcp_servers.weather_mcp_server"],
       "env_vars": {"WEATHER_API_KEY": "your-api-key-here"}
+    },
+    {
+      "name": "train operations",
+      "path": "python",
+      "args": ["-m", "voice_computer.mcp_servers.train_mcp_server"],
+      "env_vars": {
+        "TRANSPORT_API_ID": "your-transport-api-id",
+        "TRANSPORT_API_KEY": "your-transport-api-key"
+      }
     }
   ]
 }
@@ -280,6 +312,15 @@ You can pass environment variables to MCP servers:
       "path": "python",
       "args": ["-m", "voice_computer.mcp_servers.weather_mcp_server"],
       "env_vars": {"WEATHER_API_KEY": "${WEATHER_API_KEY}"}
+    },
+    {
+      "name": "trains",
+      "path": "python",
+      "args": ["-m", "voice_computer.mcp_servers.train_mcp_server"],
+      "env_vars": {
+        "TRANSPORT_API_ID": "${TRANSPORT_API_ID}",
+        "TRANSPORT_API_KEY": "${TRANSPORT_API_KEY}"
+      }
     }
   ]
 }

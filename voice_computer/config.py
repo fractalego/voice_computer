@@ -62,6 +62,15 @@ class Config:
                     "path": "python",
                     "args": ["-m", "voice_computer.mcp_servers.weather_mcp_server"],
                     "env_vars": {"WEATHER_API_KEY": "${WEATHER_API_KEY}"}
+                },
+                {
+                    "name": "trains",
+                    "path": "python",
+                    "args": ["-m", "voice_computer.mcp_servers.train_mcp_server"],
+                    "env_vars": {
+                        "TRANSPORT_API_ID": "${TRANSPORT_API_ID}",
+                        "TRANSPORT_API_KEY": "${TRANSPORT_API_KEY}"
+                    }
                 }
             ],
             
@@ -124,6 +133,16 @@ class ExampleConfig(Config):
                 "path": "python",
                 "args": ["-m", "voice_computer.mcp_servers.weather_mcp_server"],
                 "env_vars": {"WEATHER_API_KEY": "${WEATHER_API_KEY}"}
+            },
+            # Train MCP server
+            {
+                "name": "train operations",
+                "path": "python",
+                "args": ["-m", "voice_computer.mcp_servers.train_mcp_server"],
+                "env_vars": {
+                    "TRANSPORT_API_ID": "${TRANSPORT_API_ID}",
+                    "TRANSPORT_API_KEY": "${TRANSPORT_API_KEY}"
+                }
             },
         ]
         
@@ -193,6 +212,15 @@ def create_example_config_file(path: str) -> None:
                 "path": "python",
                 "args": ["-m", "voice_computer.mcp_servers.weather_mcp_server"],
                 "env_vars": {"WEATHER_API_KEY": "${WEATHER_API_KEY}"}
+            },
+            {
+                "name": "trains",
+                "path": "python",
+                "args": ["-m", "voice_computer.mcp_servers.train_mcp_server"],
+                "env_vars": {
+                    "TRANSPORT_API_ID": "${TRANSPORT_API_ID}",
+                    "TRANSPORT_API_KEY": "${TRANSPORT_API_KEY}"
+                }
             }
         ],
         "streaming": {
