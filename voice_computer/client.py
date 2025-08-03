@@ -50,7 +50,6 @@ class SimpleConfig:
                 "I'm done",
                 "that's all"
             ],
-            "exit_entailment_threshold": 0.7,
             "facts": [
                 "The name of this chatbot is 'Computer'"
             ]
@@ -246,7 +245,7 @@ class VoiceComputerClient:
         
         return messages.add_system_prompt(system_prompt)
     
-    def _is_exit_command(self, user_input: str) -> bool:
+    async def _is_exit_command(self, user_input: str) -> bool:
         """
         Check if user input is an exit command using entailment.
         
@@ -266,19 +265,16 @@ class VoiceComputerClient:
             "thank you",
             "shut up"
         ]
-        threshold = self.config.get_value("exit_entailment_threshold") or 0.7
-        
         user_input_clean = user_input.strip().lower()
         
         try:
-            # Check entailment against each exit sentence
-            for exit_sentence in exit_sentences:
-                score = self.entailer.judge(user_input_clean, exit_sentence.lower())
-                _logger.debug(f"Exit entailment score for '{user_input_clean}' -> '{exit_sentence}': {score}")
-                
-                if score >= threshold:
-                    _logger.info(f"Exit command detected: '{user_input_clean}' entails '{exit_sentence}' (score: {score})")
-                    return True
+            # Check entailment against all exit sentences at once
+            matching_indices = await self.entailer.judge_list(user_input_clean, exit_sentences)
+            
+            if matching_indices:
+                matched_sentences = [exit_sentences[i] for i in matching_indices]
+                _logger.info(f"Exit command detected: '{user_input_clean}' matches {matched_sentences}")
+                return True
             
             return False
             
@@ -361,7 +357,7 @@ class VoiceComputerClient:
                         continue
                     
                     # Handle exit commands using entailer
-                    if self._is_exit_command(user_input):
+                    if await self._is_exit_command(user_input):
                         await self.voice_interface.output("Goodbye!")
                         # Reset conversation state when conversation ends
                         self._reset_conversation_state()
@@ -444,7 +440,7 @@ class VoiceComputerClient:
                         continue
                     
                     # Handle exit commands using entailer
-                    if self._is_exit_command(user_input):
+                    if await self._is_exit_command(user_input):
                         print("bot> Goodbye!")
                         # Reset conversation state when conversation ends
                         self._reset_conversation_state()

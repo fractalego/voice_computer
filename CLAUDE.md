@@ -183,7 +183,6 @@ client = VoiceComputerClient(config)
 ## Voice Commands
 
 - **General queries**: Any natural language request processed through MCP tools
-- **Exit commands**: "exit", "quit", "stop", "goodbye", "bye" to end session
 - **System responds**: Via text-to-speech with configurable voice settings
 
 ## Extending the System

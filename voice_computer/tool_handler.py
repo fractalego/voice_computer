@@ -50,14 +50,27 @@ class ToolHandler:
         self.entailer = Entailer(config)
         self.extractor = ArgumentExtractor(config=config)
         
-        # Get threshold from config
-        self.threshold = config.get_value("entailment_threshold") if config else 0.5
+        # Update entailer with tools once they're available
+        self._update_entailer_tools()
         
-        _logger.info(f"ToolHandler initialized with {len(tools)} tool groups and threshold {self.threshold}")
+        _logger.info(f"ToolHandler initialized with {len(tools)} tool groups")
     
     def update_conversation_history(self, conversation_history: List) -> None:
         """Update the conversation history for context in tool extraction."""
         self.conversation_history = conversation_history
+    
+    def _update_entailer_tools(self) -> None:
+        """Update the entailer with the current tools list."""
+        # Build a flattened list of all tools from all groups
+        all_tools = []
+        for group in self.tools:
+            for tool in group.tools:
+                all_tools.append({
+                    'name': tool.name,
+                    'description': tool.description
+                })
+        
+        self.entailer.update_tools(all_tools)
     
     async def handle_query(self, query: str) -> tuple[List[ToolResult], List[FailedTool]]:
         """
@@ -80,40 +93,35 @@ class ToolHandler:
             _logger.warning("No tools found in tool groups")
             return [], []
         
-        # Score each tool against the query using entailment
-        scored_tools = await self._score_tools(query, tool_table)
+        # Build conversation context for entailment
+        conversation_context = self._build_entailment_context(query)
         
-        # Filter tools above threshold
-        relevant_tools = [
-            (tool_info, score) for tool_info, score in scored_tools 
-            if score >= self.threshold
-        ]
+        # Get relevant tool indices from entailer
+        relevant_indices = await self.entailer.select_relevant_tools(conversation_context)
         
-        if not relevant_tools:
-            _logger.info(f"No tools scored above threshold {self.threshold}")
+        if not relevant_indices:
+            _logger.info("No tools were determined to be relevant for this query")
             return [], []
         
-        _logger.info(f"Found {len(relevant_tools)} relevant tools above threshold")
+        _logger.info(f"Found {len(relevant_indices)} relevant tools: {relevant_indices}")
         
         # Execute each relevant tool
         results = []
         failed_tools = []
         
-        for tool_info, score in relevant_tools:
-            try:
-                result, failed_tool = await self._execute_tool(query, tool_info, score)
-                if result:
-                    results.append(result)
-                if failed_tool:
-                    failed_tools.append(failed_tool)
-            except Exception as e:
-                _logger.error(f"Error executing tool {tool_info['name']}: {e}")
-                # Create error result
-                results.append(ToolResult(
-                    original_query=query,
-                    tool_description=tool_info['description'],
-                    tool_result=f"Error: {str(e)}"
-                ))
+        for tool_index in relevant_indices:
+            if tool_index < len(tool_table):
+                tool_info = tool_table[tool_index]
+                try:
+                    result, failed_tool = await self._execute_tool(query, tool_info, True)
+                    if result:
+                        results.append(result)
+                    if failed_tool:
+                        failed_tools.append(failed_tool)
+                except Exception as e:
+                    _logger.error(f"Error executing tool {tool_info['name']}: {e}")
+            else:
+                _logger.warning(f"Invalid tool index returned by entailer: {tool_index}")
         
         return results, failed_tools
     
@@ -141,41 +149,11 @@ class ToolHandler:
         
         return tool_table
     
-    async def _score_tools(self, query: str, tool_table: List[Dict[str, Any]]) -> List[tuple[Dict[str, Any], float]]:
-        """Score each tool against the query using entailment."""
-        scored_tools = []
-        
-        # Build conversation context for entailment
-        conversation_context = self._build_entailment_context(query)
-        
-        for tool_info in tool_table:
-            try:
-                # Use combined description for better entailment scoring
-                description = tool_info['description'].strip()
-                
-                # Judge entailment: does the conversation context entail that this tool should be used?
-                # Create modified versions without changing the original query
-                entailment_query = conversation_context
-                entailment_description = "In the user's current query the user wants to: " + description
-                score = self.entailer.judge(entailment_description, entailment_query)
-                
-                scored_tools.append((tool_info, score))
-                
-                _logger.debug(f"Tool {tool_info['name']} scored {score:.3f} for conversation context")
-                
-            except Exception as e:
-                _logger.error(f"Error scoring tool {tool_info['name']}: {e}")
-                scored_tools.append((tool_info, 0.0))
-        
-        # Sort by score (highest first)
-        scored_tools.sort(key=lambda x: x[1], reverse=True)
-        
-        return scored_tools
     
-    async def _execute_tool(self, query: str, tool_info: Dict[str, Any], score: float) -> tuple[Optional[ToolResult], Optional[FailedTool]]:
+    async def _execute_tool(self, query: str, tool_info: Dict[str, Any], score: bool) -> tuple[Optional[ToolResult], Optional[FailedTool]]:
         """Execute a single tool with extracted arguments."""
         try:
-            _logger.info(f"Executing tool {tool_info['name']} with score {score:.3f}")
+            _logger.info(f"Executing tool {tool_info['name']} with entailment: {score}")
             
             # Get recent conversation history for context
             history_length = self.config.get_value("extractor_conversation_history_length") if self.config else 2
@@ -351,7 +329,7 @@ class ToolHandler:
         summary = f"Tool Handler Summary:\n"
         summary += f"- Total tool groups: {len(self.tools)}\n"
         summary += f"- Total tools: {total_tools}\n"
-        summary += f"- Entailment threshold: {self.threshold}\n\n"
+        summary += f"- Entailment model: Ollama-based Y/N judgment\n\n"
         summary += "Groups:\n" + "\n".join(f"  {line}" for line in summary_lines)
         
         return summary

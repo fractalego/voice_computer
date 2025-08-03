@@ -30,10 +30,9 @@ class Config:
             # Whisper model settings
             "whisper_model": "fractalego/personal-whisper-distilled-model",  # Hugging Face model ID
             
-            # Entailment model settings
-            "entailment_model": "vectara/hallucination_evaluation_model",  # Hugging Face model ID
-            "entailment_device": None,              # Auto-detect device if None (cuda/mps/cpu)
-            "entailment_threshold": 0.5,            # Minimum entailment score to run a tool
+            # Entailment settings (using Ollama)
+            "entailer_host": None,                  # Use ollama_host if None
+            "entailer_model": None,                 # Use ollama_model if None  
             "entailer_conversation_history_length": 3,  # Number of recent utterances to include for entailment context
             
             # Ollama settings
@@ -187,9 +186,8 @@ def create_example_config_file(path: str) -> None:
         "waking_up_sound": True,
         "deactivate_sound": True,
         "whisper_model": "fractalego/personal-whisper-distilled-model",
-        "entailment_model": "vectara/hallucination_evaluation_model",
-        "entailment_device": None,
-        "entailment_threshold": 0.5,
+        "entailer_host": None,
+        "entailer_model": None,
         "entailer_conversation_history_length": 3,
         "ollama_host": "http://localhost:11434",
         "ollama_model": "qwen2.5:32b",
