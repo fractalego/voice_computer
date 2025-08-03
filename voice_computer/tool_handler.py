@@ -20,6 +20,14 @@ class ToolResult(NamedTuple):
     tool_result: Any
 
 
+class FailedTool(NamedTuple):
+    """Information about a tool that couldn't be executed."""
+    tool_name: str
+    tool_description: str
+    missing_parameters: List[str]
+    score: float
+
+
 class ToolHandler:
     """Handler that uses entailment scoring to select and execute relevant tools."""
     
@@ -51,7 +59,7 @@ class ToolHandler:
         """Update the conversation history for context in tool extraction."""
         self.conversation_history = conversation_history
     
-    async def handle_query(self, query: str) -> List[ToolResult]:
+    async def handle_query(self, query: str) -> tuple[List[ToolResult], List[FailedTool]]:
         """
         Handle a query by selecting and executing relevant tools.
         
@@ -59,18 +67,18 @@ class ToolHandler:
             query: The user's natural language query
             
         Returns:
-            List of ToolResult objects for each executed tool
+            Tuple of (successful_results, failed_tools)
         """
         if not self.tools:
             _logger.warning("No tools available")
-            return []
+            return [], []
         
         # Build table of all available tools with their descriptions
         tool_table = self._build_tool_table()
         
         if not tool_table:
             _logger.warning("No tools found in tool groups")
-            return []
+            return [], []
         
         # Score each tool against the query using entailment
         scored_tools = await self._score_tools(query, tool_table)
@@ -83,17 +91,21 @@ class ToolHandler:
         
         if not relevant_tools:
             _logger.info(f"No tools scored above threshold {self.threshold}")
-            return []
+            return [], []
         
         _logger.info(f"Found {len(relevant_tools)} relevant tools above threshold")
         
         # Execute each relevant tool
         results = []
+        failed_tools = []
+        
         for tool_info, score in relevant_tools:
             try:
-                result = await self._execute_tool(query, tool_info, score)
+                result, failed_tool = await self._execute_tool(query, tool_info, score)
                 if result:
                     results.append(result)
+                if failed_tool:
+                    failed_tools.append(failed_tool)
             except Exception as e:
                 _logger.error(f"Error executing tool {tool_info['name']}: {e}")
                 # Create error result
@@ -103,7 +115,7 @@ class ToolHandler:
                     tool_result=f"Error: {str(e)}"
                 ))
         
-        return results
+        return results, failed_tools
     
     def _build_tool_table(self) -> List[Dict[str, Any]]:
         """Build a table of all available tools with their metadata."""
@@ -160,7 +172,7 @@ class ToolHandler:
         
         return scored_tools
     
-    async def _execute_tool(self, query: str, tool_info: Dict[str, Any], score: float) -> Optional[ToolResult]:
+    async def _execute_tool(self, query: str, tool_info: Dict[str, Any], score: float) -> tuple[Optional[ToolResult], Optional[FailedTool]]:
         """Execute a single tool with extracted arguments."""
         try:
             _logger.info(f"Executing tool {tool_info['name']} with score {score:.3f}")
@@ -185,19 +197,28 @@ class ToolHandler:
             _logger.debug(f"Extracted arguments for {tool_info['name']}: {arguments}")
 
             # Check if tool execution should proceed based on argument requirements
-            if not self._should_execute_tool(tool_info, arguments):
-                return None
+            should_execute, missing_params = self._should_execute_tool_with_details(tool_info, arguments)
+            if not should_execute:
+                # Create failed tool information
+                failed_tool = FailedTool(
+                    tool_name=tool_info['name'],
+                    tool_description=tool_info['description'],
+                    missing_parameters=missing_params,
+                    score=score
+                )
+                return None, failed_tool
 
             # Execute the tool
             tool_group = tool_info['group']
             result = await tool_group.call_tool(tool_info['name'], arguments)
             
             # Create result object
-            return ToolResult(
+            tool_result = ToolResult(
                 original_query=query,
                 tool_description=tool_info['description'],
                 tool_result=result
             )
+            return tool_result, None
             
         except Exception as e:
             _logger.error(f"Error executing tool {tool_info['name']}: {e}")
@@ -237,6 +258,41 @@ class ToolHandler:
         # If tool has optional parameters only, empty arguments are acceptable
         _logger.debug(f"Tool {tool_info['name']} argument validation passed")
         return True
+    
+    def _should_execute_tool_with_details(self, tool_info: Dict[str, Any], arguments: Dict[str, Any]) -> tuple[bool, List[str]]:
+        """
+        Determine if a tool should be executed and return missing parameters.
+        
+        Args:
+            tool_info: Tool information including input schema
+            arguments: Extracted arguments from the query
+            
+        Returns:
+            Tuple of (should_execute, missing_parameters)
+        """
+        if arguments is None:
+            _logger.warning(f"No valid arguments extracted for tool {tool_info['name']}")
+            return False, ["Failed to extract any arguments"]
+        
+        input_schema = tool_info.get('input_schema', {})
+        required_params = input_schema.get('required', [])
+        properties = input_schema.get('properties', {})
+        
+        # If tool has no parameters defined, empty arguments are fine
+        if not properties:
+            _logger.debug(f"Tool {tool_info['name']} requires no parameters, proceeding with execution")
+            return True, []
+        
+        # If tool has required parameters, check if they were extracted
+        if required_params:
+            missing_required = [param for param in required_params if param not in arguments]
+            if missing_required:
+                _logger.warning(f"Tool {tool_info['name']} missing required parameters: {missing_required}")
+                return False, missing_required
+        
+        # If tool has optional parameters only, empty arguments are acceptable
+        _logger.debug(f"Tool {tool_info['name']} argument validation passed")
+        return True, []
     
     def _get_recent_conversation_history(self, history_length: int) -> List:
         """Get the most recent conversation exchanges for context."""

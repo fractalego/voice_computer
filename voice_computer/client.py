@@ -88,6 +88,9 @@ class VoiceComputerClient:
         # Tool results queue (last 5 results)
         self.tool_results_queue = []
         
+        # Failed tools queue (last 5 failed tools)
+        self.failed_tools_queue = []
+        
         # Conversation history (list of utterances)
         self.conversation_history = []
         
@@ -113,6 +116,7 @@ class VoiceComputerClient:
         _logger.info("Resetting conversation state - clearing history and tool results")
         self.conversation_history.clear()
         self.tool_results_queue.clear()
+        self.failed_tools_queue.clear()
     
     def _initialize_mcp_tools(self) -> None:
         """Initialize MCP tools from configuration."""
@@ -191,12 +195,17 @@ class VoiceComputerClient:
                 self.tool_handler.update_conversation_history(self.conversation_history)
             
             # Execute relevant tools using the handler
-            tool_results = await self.tool_handler.handle_query(query)
+            tool_results, failed_tools = await self.tool_handler.handle_query(query)
             
             # Update tool results queue (keep only last 5)
             self.tool_results_queue.extend(tool_results)
             if len(self.tool_results_queue) > 5:
                 self.tool_results_queue = self.tool_results_queue[-5:]
+            
+            # Update failed tools queue (keep only last 5)
+            self.failed_tools_queue.extend(failed_tools)
+            if len(self.failed_tools_queue) > 5:
+                self.failed_tools_queue = self.failed_tools_queue[-5:]
             
             # Generate response using LLM with conversation history and tool results context
             messages = self._build_messages_with_history()
@@ -229,8 +238,8 @@ class VoiceComputerClient:
     
     def _add_tool_results_to_system_prompt(self, messages: Messages) -> Messages:
         """Add recent tool results to the system prompt."""
-        # Format tool context and get facts from config
-        tool_context = format_tool_context(self.tool_results_queue)
+        # Format tool context including failed tools and get facts from config
+        tool_context = format_tool_context(self.tool_results_queue, self.failed_tools_queue)
         facts = self.config.get_value("facts") or []
         system_prompt = get_voice_assistant_system_prompt(tool_context, facts)
         

@@ -76,27 +76,38 @@ Example response format:
 {{"param1": "value1", "param2": 123, "param3": true}}"""
 
 
-def format_tool_context(tool_results_queue: list) -> str:
+def format_tool_context(tool_results_queue: list, failed_tools: list = None) -> str:
     """
     Format tool results into context string for the system prompt.
     
     Args:
         tool_results_queue: List of recent tool execution results
+        failed_tools: List of tools that couldn't be executed due to missing parameters
         
     Returns:
         Formatted tool context string
     """
-    if not tool_results_queue:
-        return ""
+    context_parts = []
     
-    tool_context = "Recent tool execution results:\n\n"
-    for i, result in enumerate(tool_results_queue):
-        tool_context += f"Tool Result {i+1}:\n"
-        tool_context += f"Query: {result.original_query}\n"
-        tool_context += f"Tool: {result.tool_description}\n"
-        tool_context += f"Result: {result.tool_result}\n\n"
+    # Add successful tool results
+    if tool_results_queue:
+        context_parts.append("Recent tool execution results:\n")
+        for i, result in enumerate(tool_results_queue):
+            context_parts.append(f"Tool Result {i+1}:")
+            context_parts.append(f"Query: {result.original_query}")
+            context_parts.append(f"Tool: {result.tool_description}")
+            context_parts.append(f"Result: {result.tool_result}\n")
     
-    return tool_context
+    # Add failed tool information
+    if failed_tools:
+        context_parts.append("Tools that could not be executed due to missing parameters:\n")
+        for i, failed_tool in enumerate(failed_tools):
+            context_parts.append(f"Failed Tool {i+1}:")
+            context_parts.append(f"Tool: {failed_tool.tool_name} - {failed_tool.tool_description}")
+            context_parts.append(f"Missing required parameters: {', '.join(failed_tool.missing_parameters)}")
+            context_parts.append(f"Note: This tool cannot be used unless these specific parameters are provided as input.\n")
+    
+    return "\n".join(context_parts) if context_parts else ""
 
 
 def format_parameter_descriptions(properties: dict, required_params: list) -> str:
