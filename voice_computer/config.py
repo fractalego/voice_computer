@@ -33,7 +33,7 @@ class Config:
             # Entailment model settings
             "entailment_model": "vectara/hallucination_evaluation_model",  # Hugging Face model ID
             "entailment_device": None,              # Auto-detect device if None (cuda/mps/cpu)
-            "entailment_threshold": 0.6,            # Minimum entailment score to run a tool
+            "entailment_threshold": 0.5,            # Minimum entailment score to run a tool
             "entailer_conversation_history_length": 3,  # Number of recent utterances to include for entailment context
             
             # Ollama settings
@@ -152,7 +152,7 @@ class ExampleConfig(Config):
 class JSONConfig(Config):
     """Configuration loaded from a JSON file."""
     
-    def __initinit__(self, json_path: str):
+    def __init__(self, json_path: str):
         self.json_path = Path(json_path)
         config_dict = self._load_from_json()
         super().__init__(config_dict)
@@ -189,7 +189,7 @@ def create_example_config_file(path: str) -> None:
         "whisper_model": "fractalego/personal-whisper-distilled-model",
         "entailment_model": "vectara/hallucination_evaluation_model",
         "entailment_device": None,
-        "entailment_threshold": 0.6,
+        "entailment_threshold": 0.5,
         "entailer_conversation_history_length": 3,
         "ollama_host": "http://localhost:11434",
         "ollama_model": "qwen2.5:32b",

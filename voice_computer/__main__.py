@@ -179,6 +179,16 @@ async def main():
     logger.info("Starting Voice Computer")
     
     try:
+        # Validate config file exists if specified
+        if args.config:
+            config_path = Path(args.config)
+            if not config_path.exists():
+                print(f"Error: Configuration file '{args.config}' does not exist")
+                return 1
+            if not config_path.is_file():
+                print(f"Error: Configuration path '{args.config}' is not a file")
+                return 1
+        
         # Load configuration
         config = load_config(args.config)
         logger.info(f"Configuration loaded from: {args.config or 'default'}")

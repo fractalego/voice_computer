@@ -155,8 +155,8 @@ class ToolHandler:
                 
                 # Judge entailment: does the conversation context entail that this tool should be used?
                 # Create modified versions without changing the original query
-                entailment_query = "The conversation so far:\n" + conversation_context
-                entailment_description = "The user wants to: " + description
+                entailment_query = conversation_context
+                entailment_description = "In the user's current query the user wants to: " + description
                 score = self.entailer.judge(entailment_description, entailment_query)
                 
                 scored_tools.append((tool_info, score))
@@ -314,18 +314,21 @@ class ToolHandler:
         
         # Get the last N utterances (not exchanges, just utterances)
         # We want to end with the current user query, so we get N-1 previous utterances
-        previous_utterances = self.conversation_history[-(entailer_history_length-1):] if len(self.conversation_history) >= entailer_history_length-1 else self.conversation_history
+        previous_utterances = self.conversation_history[-(entailer_history_length-1):-1] if len(self.conversation_history) >= entailer_history_length-1 else self.conversation_history
         
         # Build conversation context
         context_parts = []
-        for utterance in previous_utterances:
-            if utterance.role == "user":
-                context_parts.append(f"User: {utterance.content}")
-            elif utterance.role == "assistant":
-                context_parts.append(f"Assistant: {utterance.content}")
+        if previous_utterances:
+            context_parts.append("This is the prior conversation for context:")
+            for utterance in previous_utterances[:-1]:
+                if utterance.role == "user":
+                    context_parts.append(f"User: {utterance.content}")
+                elif utterance.role == "assistant":
+                    context_parts.append(f"Assistant: {utterance.content}")
         
         # Add current query
-        context_parts.append(f"User: {current_query}")
+        context_parts.append("")
+        context_parts.append(f"The current query from the user is: {current_query}")
         
         return "\n".join(context_parts)
     

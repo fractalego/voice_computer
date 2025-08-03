@@ -23,7 +23,7 @@ def get_voice_assistant_system_prompt(tool_context: str = "", facts: list = None
     if tool_context:
         return f"""{base_prompt}{facts_section}
 
-Use the recent tool results below to provide informed responses to user queries.
+Use the recent tool results below to provide informed responses to user queries. The last tools results are the latest.
 
 {tool_context}
 
