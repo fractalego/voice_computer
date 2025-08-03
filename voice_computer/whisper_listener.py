@@ -344,6 +344,7 @@ class WhisperListener:
                 # Try to reactivate stream
                 self.deactivate()
                 self.activate()
+                await asyncio.sleep(0.1)  # Give time for stream reactivation
                 continue
 
             rms_val = self._rms(inp)
@@ -356,16 +357,23 @@ class WhisperListener:
             if rms_val > self.volume_threshold:
                 _logger.debug(f"Audio detected! RMS={rms_val:.4f} > threshold={self.volume_threshold:.4f}")
                 
+                # Give other tasks a brief moment before processing
+                await asyncio.sleep(0.01)
+                
                 # Record full audio
                 audio_data = self._record_audio(start_with=inp)
                 
                 # Check if we got valid audio data
                 if len(audio_data) == 0:
                     _logger.debug("No audio data recorded, continuing...")
+                    await asyncio.sleep(0.01)  # Brief pause before continuing
                     continue
                     
                 _logger.debug(f"Recorded audio: length={len(audio_data)}, duration={len(audio_data)/16000:.2f}s")
                 self.last_audio = audio_data
+                
+                # Give other tasks time before starting transcription
+                await asyncio.sleep(0.01)
                 
                 # Transcribe audio
                 result = await self._process_audio(audio_data)
@@ -378,10 +386,15 @@ class WhisperListener:
                         return transcription
                     else:
                         _logger.debug(f"Got unclear transcription or empty result: '{transcription}'")
+                        await asyncio.sleep(0.01)  # Brief pause before next attempt
             else:
                 # Adjust threshold based on ambient noise
                 new_threshold = 2 * rms_val
                 self.volume_threshold = max(new_threshold, self.original_volume_threshold)
+                
+                # Give other tasks time to run during quiet periods
+                if sample_count % 10 == 0:  # Every 10 samples (~100ms)
+                    await asyncio.sleep(0.01)
 
     async def _process_audio(self, waveform: np.ndarray, hotword: Optional[str] = None) -> dict:
         """

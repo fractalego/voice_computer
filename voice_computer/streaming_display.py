@@ -105,6 +105,9 @@ class StreamingDisplay:
                         # Start TTS speaker thread if not already running
                         speaker_thread.start()
                         is_speaking = True
+                    
+                    # Give other async tasks a chance to run
+                    await asyncio.sleep(0.01)
 
             except asyncio.TimeoutError:
                 # Display partial batch on timeout if there are tokens waiting
@@ -112,6 +115,9 @@ class StreamingDisplay:
                     batch_text = ''.join(token_batch)
                     self.output_handler(batch_text)
                     token_batch.clear()
+                    
+                # Give other async tasks a chance to run
+                await asyncio.sleep(0.01)
 
         if speaker_thread is not None:
             speaker_thread.join()
@@ -287,6 +293,8 @@ async def stream_colored_to_console_with_voice_interruption(
     async def voice_listener_task():
         """Listen for voice input and return when speech is detected."""
         try:
+            # Give other tasks a chance to run before starting voice listening
+            await asyncio.sleep(0.1)
             # This will block until voice input is detected
             transcription = await whisper_listener.input()
             _logger.debug(f"Voice interruption detected, discarding transcription: '{transcription}'")
@@ -298,6 +306,8 @@ async def stream_colored_to_console_with_voice_interruption(
     async def streaming_task():
         """Handle the streaming display."""
         try:
+            # Give voice listener a chance to start
+            await asyncio.sleep(0.05)
             await display.display_stream(token_queue)
             return "STREAMING_COMPLETE"
         except Exception as e:
@@ -363,6 +373,8 @@ async def stream_colored_to_console_with_tts_and_voice_interruption(
     async def voice_listener_task():
         """Listen for voice input and return when speech is detected."""
         try:
+            # Give other tasks a chance to run before starting voice listening
+            await asyncio.sleep(0.1)
             # This will block until voice input is detected
             transcription = await whisper_listener.input()
             _logger.debug(f"Voice interruption detected, discarding transcription: '{transcription}'")
@@ -374,6 +386,8 @@ async def stream_colored_to_console_with_tts_and_voice_interruption(
     async def streaming_task():
         """Handle the streaming display with TTS."""
         try:
+            # Give voice listener a chance to start
+            await asyncio.sleep(0.05)
             await display.display_stream(token_queue)
             # After streaming is complete, play any batched TTS
             if tts_speaker and tts_speaker._audio_queue:
