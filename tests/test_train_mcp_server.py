@@ -104,7 +104,7 @@ class TestTrainMCPServer(unittest.IsolatedAsyncioTestCase):
         for query in test_queries:
             try:
                 result = await search_station_codes(query)
-                
+                print(result)
                 self.assertIsInstance(result, str, "Result should be a string")
                 self.assertGreater(len(result), 0, "Result should not be empty")
                 

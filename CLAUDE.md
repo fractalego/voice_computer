@@ -68,13 +68,51 @@ Voice Computer is a voice-driven assistant that integrates Whisper speech recogn
 
 ## Key Files to Understand
 
+### Core System Files
 - `voice_computer/client.py`: Main voice computer client with voice loop and query processing
 - `voice_computer/voice_interface.py`: Voice I/O management with audio feedback
 - `voice_computer/whisper_listener.py`: Whisper-based speech recognition using CLI tools
-- `voice_computer/tool_agent.py`: MCP tool execution and result processing
+- `voice_computer/tool_handler.py`: MCP tool execution and result processing with entailment-based selection
 - `voice_computer/mcp_connector.py`: MCP protocol implementation and tool management
 - `voice_computer/config.py`: Configuration management and loading
-- `tests/test*.py`: Unit tests for core functionality (using unittest framework)
+- `voice_computer/entailer.py`: Ollama-based tool selection and exit command detection
+- `voice_computer/extractor.py`: Argument extraction from natural language queries
+- `voice_computer/ollama_client.py`: Ollama LLM client for language model interaction
+- `voice_computer/data_types.py`: Core data structures (Messages, Utterances, Tools)
+- `voice_computer/prompt.py`: System prompts for the voice assistant and argument extraction
+- `voice_computer/model_factory.py`: Factory for creating and caching Ollama clients
+- `voice_computer/streaming_display.py`: Streaming text display with TTS integration
+- `run_voice_computer.py`: Main execution script with argument parsing and logging
+
+### Voice and Audio Components  
+- `voice_computer/speaker/`: Directory containing TTS and audio playback components
+- `voice_computer/speaker/tts_speaker.py`: Text-to-speech functionality
+- `voice_computer/speaker/sound_file_speaker.py`: Audio file playback
+- `voice_computer/speaker/base_speaker.py`: Base speaker interface
+- `voice_computer/speaker/number_conversion_to_words.py`: Number to words conversion
+- `voice_computer/sounds/`: Directory containing audio feedback files
+  - `activation.wav`: Voice activation sound
+  - `deactivation.wav`: Voice deactivation sound  
+  - `computer_work_beep.wav`: Tool execution notification sound
+  - `deny.wav`: Error/denial sound
+
+### MCP Servers
+- `voice_computer/mcp_servers/`: Directory containing built-in MCP servers
+- `voice_computer/mcp_servers/math_mcp_server.py`: Mathematical calculations and operations
+- `voice_computer/mcp_servers/time_mcp_server.py`: Time and date operations
+- `voice_computer/mcp_servers/weather_mcp_server.py`: Weather information (requires API key)
+- `voice_computer/mcp_servers/train_mcp_server.py`: UK train information (requires API keys)
+- `voice_computer/mcp_servers/tfl_mcp_server.py`: London transport status (TFL API)
+
+### Entry Points and CLI
+- `voice_computer/__main__.py`: Module entry point for `python -m voice_computer`
+- `voice_computer/cli.py`: Command-line interface handling
+
+### Testing
+ALL THE TESTS ARE NOW IN THE `tests/` DIRECTORY
+
+- `tests/`: Directory containing unit tests (using unittest framework)
+- `tests/test_*.py`: Individual test files for different components
 
 ## Prerequisites and Dependencies
 

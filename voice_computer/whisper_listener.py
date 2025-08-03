@@ -15,6 +15,7 @@ torch._dynamo.config.suppress_errors = True
 
 from transformers import WhisperProcessor, WhisperForConditionalGeneration
 from .model_factory import get_model_factory
+from .sound_thresholds import calculate_rms
 
 _logger = logging.getLogger(__name__)
 
@@ -259,19 +260,10 @@ class WhisperListener:
                 _logger.error(f"Error deactivating audio stream: {e}")
 
     def _rms(self, frame):
-        """Calculate RMS (root mean square) of audio frame."""
+        """Calculate RMS (root mean square) of audio frame using shared utility."""
         try:
             data = np.frombuffer(frame, dtype=np.int16)
-            if len(data) == 0:
-                return 0.0
-            
-            rms = np.mean(np.sqrt(data.astype(np.float64)**2)) / self.chunk
-            
-            # Handle NaN or infinite values
-            if not np.isfinite(rms):
-                return 0.0
-                
-            return float(rms)
+            return calculate_rms(data)
             
         except Exception as e:
             _logger.debug(f"Error calculating RMS: {e}")

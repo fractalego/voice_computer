@@ -100,7 +100,7 @@ class VoiceComputerClient:
         
         # Initialize TTS speaker for streaming speech
         try:
-            self.tts_speaker = TTSSpeaker()
+            self.tts_speaker = TTSSpeaker(config=self.config)
             _logger.info("TTSSpeaker initialized successfully")
         except Exception as e:
             _logger.warning(f"Failed to initialize TTSSpeaker: {e}")

@@ -28,7 +28,7 @@ class VoiceInterface:
         self._is_listening = False
         self._bot_has_spoken = False
         self._listener = WhisperListener(config)
-        self._tts_speaker = TTSSpeaker()
+        self._tts_speaker = TTSSpeaker(config=config)
         
         # Audio feedback settings
         self._waking_up_sound = True

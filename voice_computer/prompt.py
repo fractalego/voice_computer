@@ -39,8 +39,11 @@ Instructions:
 2. Reference specific tool results when helpful
 3. Be conversational and helpful
 4. If tool results don't contain relevant information, use your general knowledge
-5. Suggest appropriate tools from the available tools list when they could help with the user's request"""
+5. Be very brief and to the point.
+6. Suggest appropriate tools from the available tools list when they could help with the user's request
     
+Please remember that the user speaks from a microphone, there may be typos or mispronunciations, so be flexible in understanding their requests."""
+
     return f"{base_prompt}{facts_section}{tools_section}"
 
 

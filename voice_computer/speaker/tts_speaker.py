@@ -15,6 +15,7 @@ from .base_speaker import BaseSpeaker
 from .number_conversion_to_words import convert_numbers_to_words
 from ..speaker_embeddings import get_default_speaker_embedding
 from ..model_factory import get_model_factory
+from ..sound_thresholds import check_audio_input_threshold
 
 _logger = logging.getLogger(__name__)
 
@@ -22,16 +23,18 @@ _logger = logging.getLogger(__name__)
 class TTSSpeaker(BaseSpeaker):
     """TTS Speaker implementation with streaming text-to-speech capability."""
     
-    def __init__(self, device: Optional[str] = None, model_name: str = "microsoft/speecht5_tts"):
+    def __init__(self, device: Optional[str] = None, model_name: str = "microsoft/speecht5_tts", config=None):
         """
         Initialize the TTS speaker.
         
         Args:
             device: Device to run the model on ('cpu', 'cuda', 'mps', or None for auto-detect)
             model_name: Hugging Face model name for TTS
+            config: Configuration object for sound threshold settings
         """
         self.model_name = model_name
         self.device = device or self._get_best_device()
+        self.config = config
         self.initialized = False
         self._processor = None
         self._model = None
@@ -43,6 +46,7 @@ class TTSSpeaker(BaseSpeaker):
         self._sample_rate = 16000  # Default sample rate for SpeechT5
         self._shaved_float_margin = 512
         self._audio_queue = []
+        
 
         _logger.info(f"TTSSpeaker created with model {model_name} on device {self.device}")
     
@@ -205,12 +209,21 @@ class TTSSpeaker(BaseSpeaker):
             format=pyaudio.paFloat32,
             channels=1,
             rate=self._sample_rate,
-            output=True
+            output=True,
+            input=True,
+            frames_per_buffer=1024
         )
         while self._audio_queue:
             audio_data, text = self._audio_queue.pop(0)
             try:
                 self._play_audio(audio_data, self._sample_rate, stream)
+                
+                # Check if user is speaking to interrupt playback
+                if self.config and check_audio_input_threshold(self.config, stream):
+                    self._audio_queue.clear()
+                    _logger.info("TTS playback interrupted by voice activity")
+                    break
+                    
             except Exception as e:
                 _logger.error(f"Error playing audio batch: {e}")
                 raise
@@ -221,4 +234,20 @@ class TTSSpeaker(BaseSpeaker):
 
         # Clear the queue after processing
         self._audio_queue.clear()
+    
+    def cleanup(self):
+        """Clean up TTS speaker resources."""
+        # Clean up PyAudio
+        if self._pyaudio:
+            try:
+                self._pyaudio.terminate()
+                self._pyaudio = None
+            except Exception as e:
+                _logger.debug(f"Error terminating PyAudio: {e}")
+        
+        # Clear audio queue
+        self._audio_queue.clear()
+        
+        _logger.debug("TTSSpeaker cleanup completed")
+
 
