@@ -74,8 +74,6 @@ Voice Computer is a voice-driven assistant that integrates Whisper speech recogn
 - `voice_computer/tool_agent.py`: MCP tool execution and result processing
 - `voice_computer/mcp_connector.py`: MCP protocol implementation and tool management
 - `voice_computer/config.py`: Configuration management and loading
-- `run_voice_computer.py`: Main execution script with argument parsing and logging
-
 - `tests/test*.py`: Unit tests for core functionality (using unittest framework)
 
 ## Prerequisites and Dependencies

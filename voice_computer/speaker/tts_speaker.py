@@ -189,7 +189,9 @@ class TTSSpeaker(BaseSpeaker):
         try:
             batch_text = convert_numbers_to_words(batch_text)
             # Process text input
-            inputs = self._processor(text=batch_text + " ... ", return_tensors="pt")
+            if not batch_text.endswith(('.', '!', '?', '...')):
+                batch_text += " ..."
+            inputs = self._processor(text=batch_text, return_tensors="pt")
             input_ids = inputs["input_ids"].to(self.device)
             speech = self._model.generate_speech(input_ids, self._speaker_embedding, vocoder=self._vocoder)
             self._audio_queue.append((speech.cpu()[:-self._shaved_float_margin], batch_text))

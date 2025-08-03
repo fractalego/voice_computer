@@ -70,6 +70,11 @@ class Config:
                         "TRANSPORT_API_ID": "${TRANSPORT_API_ID}",
                         "TRANSPORT_API_KEY": "${TRANSPORT_API_KEY}"
                     }
+                },
+                {
+                    "name": "tfl",
+                    "path": "python",
+                    "args": ["-m", "voice_computer.mcp_servers.tfl_mcp_server"]
                 }
             ],
             
@@ -82,7 +87,8 @@ class Config:
             
             # Bot facts configuration
             "facts": [
-                "The name of this chatbot is 'Computer'"  # Facts immediately accessible to the bot
+                "The name of this chatbot is 'Computer'",  # Facts immediately accessible to the bot
+                "You can check London transport status using TFL tools"
             ]
         }
     
@@ -142,6 +148,12 @@ class ExampleConfig(Config):
                     "TRANSPORT_API_ID": "${TRANSPORT_API_ID}",
                     "TRANSPORT_API_KEY": "${TRANSPORT_API_KEY}"
                 }
+            },
+            # TFL (Transport for London) MCP server
+            {
+                "name": "tfl operations",
+                "path": "python",
+                "args": ["-m", "voice_computer.mcp_servers.tfl_mcp_server"]
             },
         ]
         
@@ -219,6 +231,11 @@ def create_example_config_file(path: str) -> None:
                     "TRANSPORT_API_ID": "${TRANSPORT_API_ID}",
                     "TRANSPORT_API_KEY": "${TRANSPORT_API_KEY}"
                 }
+            },
+            {
+                "name": "tfl",
+                "path": "python",
+                "args": ["-m", "voice_computer.mcp_servers.tfl_mcp_server"]
             }
         ],
         "streaming": {
@@ -227,7 +244,8 @@ def create_example_config_file(path: str) -> None:
             "flush_delay": 0.1
         },
         "facts": [
-            "The name of this chatbot is 'Computer'"
+            "The name of this chatbot is 'Computer'",
+            "You can check London transport status using TFL tools"
         ]
     }
     
