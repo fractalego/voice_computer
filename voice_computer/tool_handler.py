@@ -133,20 +133,23 @@ class ToolHandler:
         """Score each tool against the query using entailment."""
         scored_tools = []
         
+        # Build conversation context for entailment
+        conversation_context = self._build_entailment_context(query)
+        
         for tool_info in tool_table:
             try:
                 # Use combined description for better entailment scoring
                 description = tool_info['description'].strip()
                 
-                # Judge entailment: does the query entail that this tool should be used?
+                # Judge entailment: does the conversation context entail that this tool should be used?
                 # Create modified versions without changing the original query
-                entailment_query = "The user asked: " + query
+                entailment_query = "The conversation so far:\n" + conversation_context
                 entailment_description = "The user wants to: " + description
                 score = self.entailer.judge(entailment_description, entailment_query)
                 
                 scored_tools.append((tool_info, score))
                 
-                _logger.debug(f"Tool {tool_info['name']} scored {score:.3f} for query: {query}")
+                _logger.debug(f"Tool {tool_info['name']} scored {score:.3f} for conversation context")
                 
             except Exception as e:
                 _logger.error(f"Error scoring tool {tool_info['name']}: {e}")
@@ -244,6 +247,31 @@ class ToolHandler:
         # We want history_length * 2 utterances (user + assistant pairs)
         max_utterances = history_length * 2
         return self.conversation_history[-max_utterances:] if len(self.conversation_history) > max_utterances else self.conversation_history
+    
+    def _build_entailment_context(self, current_query: str) -> str:
+        """Build conversation context for entailment scoring."""
+        # Get configuration for how many utterances to include
+        entailer_history_length = self.config.get_value("entailer_conversation_history_length") if self.config else 3
+        
+        if not self.conversation_history or entailer_history_length <= 0:
+            return current_query
+        
+        # Get the last N utterances (not exchanges, just utterances)
+        # We want to end with the current user query, so we get N-1 previous utterances
+        previous_utterances = self.conversation_history[-(entailer_history_length-1):] if len(self.conversation_history) >= entailer_history_length-1 else self.conversation_history
+        
+        # Build conversation context
+        context_parts = []
+        for utterance in previous_utterances:
+            if utterance.role == "user":
+                context_parts.append(f"User: {utterance.content}")
+            elif utterance.role == "assistant":
+                context_parts.append(f"Assistant: {utterance.content}")
+        
+        # Add current query
+        context_parts.append(f"User: {current_query}")
+        
+        return "\n".join(context_parts)
     
     def get_tool_summary(self) -> str:
         """Get a summary of available tools."""
