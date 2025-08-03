@@ -56,14 +56,13 @@ class Config:
                     "name": "time",
                     "path": "python",
                     "args": ["-m", "voice_computer.mcp_servers.time_mcp_server"]
+                },
+                {
+                    "name": "weather",
+                    "path": "python",
+                    "args": ["-m", "voice_computer.mcp_servers.weather_mcp_server"],
+                    "env_vars": {"WEATHER_API_KEY": "${WEATHER_API_KEY}"}
                 }
-                # Weather server (requires WEATHER_API_KEY environment variable)
-                # ,{
-                #     "name": "weather",
-                #     "path": "python",
-                #     "args": ["-m", "voice_computer.mcp_servers.weather_mcp_server"],
-                #     "env_vars": {"WEATHER_API_KEY": "your-api-key-here"}
-                # }
             ],
             
             # Streaming configuration
@@ -119,13 +118,13 @@ class ExampleConfig(Config):
                 "path": "python",
                 "args": ["-m", "voice_computer.mcp_servers.time_mcp_server"]
             },
-            # Weather MCP server (requires WEATHER_API_KEY environment variable)
-            # {
-            #     "name": "weather operations",
-            #     "path": "python",
-            #     "args": ["-m", "voice_computer.mcp_servers.weather_mcp_server"],
-            #     "env_vars": {"WEATHER_API_KEY": "your-api-key-here"}
-            # },
+            # Weather MCP server 
+            {
+                "name": "weather operations",
+                "path": "python",
+                "args": ["-m", "voice_computer.mcp_servers.weather_mcp_server"],
+                "env_vars": {"WEATHER_API_KEY": "${WEATHER_API_KEY}"}
+            },
         ]
         
         return config
@@ -188,6 +187,12 @@ def create_example_config_file(path: str) -> None:
                 "name": "time",
                 "path": "python",
                 "args": ["-m", "voice_computer.mcp_servers.time_mcp_server"]
+            },
+            {
+                "name": "weather",
+                "path": "python",
+                "args": ["-m", "voice_computer.mcp_servers.weather_mcp_server"],
+                "env_vars": {"WEATHER_API_KEY": "${WEATHER_API_KEY}"}
             }
         ],
         "streaming": {
