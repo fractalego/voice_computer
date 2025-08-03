@@ -3,12 +3,15 @@ Tool handler for selecting and executing MCP tools based on entailment scoring.
 """
 
 import logging
-from typing import List, Dict, Any, Optional, NamedTuple
+from typing import List, Dict, Any, Optional, NamedTuple, TYPE_CHECKING
 from .config import Config
 from .entailer import Entailer
 from .extractor import ArgumentExtractor
 from .ollama_client import OllamaClient
 from .mcp_connector import MCPTools
+
+if TYPE_CHECKING:
+    from .voice_interface import VoiceInterface
 
 _logger = logging.getLogger(__name__)
 
@@ -31,7 +34,7 @@ class FailedTool(NamedTuple):
 class ToolHandler:
     """Handler that uses entailment scoring to select and execute relevant tools."""
     
-    def __init__(self, ollama_client: OllamaClient, tools: List[MCPTools], config: Optional[Config] = None, conversation_history: Optional[List] = None):
+    def __init__(self, ollama_client: OllamaClient, tools: List[MCPTools], config: Optional[Config] = None, conversation_history: Optional[List] = None, voice_interface: Optional['VoiceInterface'] = None):
         """
         Initialize the tool handler.
         
@@ -40,11 +43,13 @@ class ToolHandler:
             tools: List of MCP tool groups
             config: Configuration object
             conversation_history: Recent conversation history for context
+            voice_interface: Voice interface for playing sounds (voice mode only)
         """
         self.ollama_client = ollama_client
         self.tools = tools
         self.config = config
         self.conversation_history = conversation_history or []
+        self.voice_interface = voice_interface
         
         # Initialize entailer and extractor
         self.entailer = Entailer(config)
@@ -185,6 +190,13 @@ class ToolHandler:
                     score=score
                 )
                 return None, failed_tool
+
+            # Play computer work beep sound if in voice mode
+            if self.voice_interface:
+                try:
+                    await self.voice_interface.play_computer_work_beep()
+                except Exception as e:
+                    _logger.debug(f"Failed to play computer work beep: {e}")
 
             # Execute the tool
             tool_group = tool_info['group']
