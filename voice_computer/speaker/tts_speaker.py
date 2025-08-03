@@ -15,7 +15,6 @@ from .base_speaker import BaseSpeaker
 from .number_conversion_to_words import convert_numbers_to_words
 from ..speaker_embeddings import get_default_speaker_embedding
 from ..model_factory import get_model_factory
-from ..sound_thresholds import check_audio_input_threshold
 
 _logger = logging.getLogger(__name__)
 
@@ -241,12 +240,6 @@ class TTSSpeaker(BaseSpeaker):
             audio_data, text = self._audio_queue.pop(0)
             try:
                 self._play_audio(audio_data, self._sample_rate, stream)
-                
-                # Check if user is speaking to interrupt playback
-                if self.config and check_audio_input_threshold(self.config, stream):
-                    self._audio_queue.clear()
-                    _logger.info("TTS playback interrupted by voice activity")
-                    break
                     
             except Exception as e:
                 _logger.error(f"Error playing audio batch: {e}")
@@ -254,6 +247,7 @@ class TTSSpeaker(BaseSpeaker):
         time.sleep(0.2)
 
         stream.stop_stream()
+        stream.clear()
         stream.close()
 
         # Clear the queue after processing

@@ -12,35 +12,6 @@ import numpy as np
 _logger = logging.getLogger(__name__)
 
 
-def check_audio_input_threshold(config, stream) -> bool:
-    """
-    Listen to one chunk of audio input and check if it exceeds the volume threshold.
-    
-    Args:
-        config: Configuration object containing volume threshold
-        stream: PyAudio stream (must have input=True)
-        
-    Returns:
-        True if audio input exceeds threshold, False otherwise
-    """
-    if not config or not stream:
-        return False
-    
-    # Get threshold from config
-    listener_config = config.get_value("listener_model") or {}
-    threshold = listener_config.get("listener_volume_threshold", 0.6) * 1e-4
-    
-    try:
-        data = np.frombuffer(stream.read(1024*50, exception_on_overflow=False), dtype=np.float32)
-        rms = calculate_rms(data)
-        if rms >= threshold:
-            print(f"RMS level: {rms}, Threshold: {threshold}")  # Debug output
-            return True
-        
-    except Exception as e:
-        _logger.debug(f"Error checking audio input: {e}")
-        return False
-
 
 def calculate_rms(audio_data: np.ndarray) -> float:
     """
