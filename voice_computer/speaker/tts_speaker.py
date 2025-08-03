@@ -59,6 +59,27 @@ class TTSSpeaker(BaseSpeaker):
         else:
             return "cpu"
     
+    def _get_best_input_device(self) -> Optional[int]:
+        """Auto-detect the best available input device."""
+        if not self._pyaudio:
+            self._pyaudio = pyaudio.PyAudio()
+        
+        try:
+            # First check config for specific device
+            if self.config:
+                listener_config = self.config.get_value("listener_model") or {}
+                device_index = listener_config.get("microphone_device_index", None)
+                if device_index is not None:
+                    return device_index
+            
+            # Try to find default input device
+            default_input = self._pyaudio.get_default_input_device_info()
+            return default_input['index']
+            
+        except Exception as e:
+            _logger.debug(f"Could not determine input device: {e}")
+            return None
+    
     def _load_speaker_embedding(self):
         """Load speaker embedding for SpeechT5."""
         try:
@@ -205,6 +226,9 @@ class TTSSpeaker(BaseSpeaker):
             raise
 
     def speak_batch(self):
+        # Get best input device
+        input_device_index = self._get_best_input_device()
+
         stream = self._pyaudio.open(
             format=pyaudio.paFloat32,
             channels=1,

@@ -28,15 +28,14 @@ def check_audio_input_threshold(config, stream) -> bool:
     
     # Get threshold from config
     listener_config = config.get_value("listener_model") or {}
-    threshold = listener_config.get("listener_volume_threshold", 0.6)
+    threshold = listener_config.get("listener_volume_threshold", 0.6) * 1e-4
     
     try:
-        # Read one chunk of audio data
-        data = stream.read(1024, exception_on_overflow=False)
-        audio_data = np.frombuffer(data, dtype=np.int16)
-        rms = calculate_rms(audio_data)
-        print(f"RMS level: {rms}, Threshold: {threshold}")  # Debug output
-        return rms >= threshold
+        data = np.frombuffer(stream.read(1024*50, exception_on_overflow=False), dtype=np.float32)
+        rms = calculate_rms(data)
+        if rms >= threshold:
+            print(f"RMS level: {rms}, Threshold: {threshold}")  # Debug output
+            return True
         
     except Exception as e:
         _logger.debug(f"Error checking audio input: {e}")
@@ -56,11 +55,7 @@ def calculate_rms(audio_data: np.ndarray) -> float:
     if len(audio_data) == 0:
         return 0.0
 
-    data = np.frombuffer(audio_data, dtype=np.int16)
-    if len(data) == 0:
-        return 0.0
-
-    rms = np.mean(np.sqrt(data.astype(np.float64) ** 2)) / data.shape[0]
+    rms = np.mean(np.sqrt(audio_data.astype(np.float64) ** 2)) / audio_data.shape[0]
 
     # Handle NaN or infinite values
     if not np.isfinite(rms):
