@@ -150,7 +150,7 @@ class VoiceComputerClient:
                 _logger.error(f"Failed to get tools from connector: {e}")
         
         if tools:
-            self.tool_handler = ToolHandler(self.ollama_client, tools, self.config)
+            self.tool_handler = ToolHandler(self.ollama_client, tools, self.config, self.conversation_history)
             _logger.info(f"ToolHandler initialized with {len(tools)} MCP tool groups")
         else:
             _logger.warning("No MCP tools available - running in basic mode")
@@ -186,6 +186,10 @@ class VoiceComputerClient:
             return response
         
         try:
+            # Update tool handler with current conversation history
+            if self.tool_handler:
+                self.tool_handler.update_conversation_history(self.conversation_history)
+            
             # Execute relevant tools using the handler
             tool_results = await self.tool_handler.handle_query(query)
             

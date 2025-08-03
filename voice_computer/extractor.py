@@ -4,10 +4,10 @@ Argument extractor for extracting tool arguments from natural language queries u
 
 import json
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from .config import Config
 from .ollama_client import OllamaClient
-from .data_types import Messages
+from .data_types import Messages, Utterance
 from .model_factory import get_model_factory
 from .prompt import get_argument_extraction_system_prompt, format_parameter_descriptions
 
@@ -45,7 +45,8 @@ class ArgumentExtractor:
         else:
             raise ValueError("Either ollama_client or config must be provided")
     
-    async def extract_arguments(self, query: str, tool_name: str, tool_description: str, input_schema: Dict[str, Any]) -> Dict[str, Any]:
+    async def extract_arguments(self, query: str, tool_name: str, tool_description: str, input_schema: Dict[str, Any], 
+                              conversation_history: Optional[List[Utterance]] = None, facts: Optional[List[str]] = None) -> Dict[str, Any]:
         """
         Extract tool arguments from a natural language query.
         
@@ -54,17 +55,29 @@ class ArgumentExtractor:
             tool_name: Name of the tool to extract arguments for
             tool_description: Description of what the tool does
             input_schema: JSON schema describing the tool's input parameters
+            conversation_history: Recent conversation history for context
+            facts: System facts for additional context
             
         Returns:
             Dictionary of extracted arguments matching the input schema
         """
         try:
-            # Build the extraction prompt
-            system_prompt = self._build_extraction_prompt(tool_name, tool_description, input_schema)
+            # Build the extraction prompt with context
+            system_prompt = self._build_extraction_prompt(tool_name, tool_description, input_schema, facts)
             
             # Create messages for the extraction
             messages = Messages()
             messages = messages.add_system_prompt(system_prompt)
+            
+            # Add conversation history for context if provided
+            if conversation_history:
+                for utterance in conversation_history:
+                    if utterance.role == "user":
+                        messages = messages.add_user_utterance(utterance.content)
+                    elif utterance.role == "assistant":
+                        messages = messages.add_assistant_utterance(utterance.content)
+            
+            # Add the current query as the final user message
             messages = messages.add_user_utterance(query)
             
             # Get LLM response
@@ -82,7 +95,7 @@ class ArgumentExtractor:
             _logger.error(f"Error extracting arguments for tool {tool_name}: {e}")
             return {}
     
-    def _build_extraction_prompt(self, tool_name: str, tool_description: str, input_schema: Dict[str, Any]) -> str:
+    def _build_extraction_prompt(self, tool_name: str, tool_description: str, input_schema: Dict[str, Any], facts: Optional[List[str]] = None) -> str:
         """Build the system prompt for argument extraction."""
         # Extract required and optional parameters from schema
         properties = input_schema.get("properties", {})
@@ -91,7 +104,7 @@ class ArgumentExtractor:
         # Format parameter descriptions
         params_text = format_parameter_descriptions(properties, required_params)
         
-        return get_argument_extraction_system_prompt(tool_name, tool_description, params_text)
+        return get_argument_extraction_system_prompt(tool_name, tool_description, params_text, facts)
 
     def _parse_arguments_response(self, response: str) -> Dict[str, Any]:
         """Parse the LLM response to extract JSON arguments."""

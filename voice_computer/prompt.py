@@ -36,7 +36,7 @@ Instructions:
     return f"{base_prompt}{facts_section}"
 
 
-def get_argument_extraction_system_prompt(tool_name: str, tool_description: str, params_text: str) -> str:
+def get_argument_extraction_system_prompt(tool_name: str, tool_description: str, params_text: str, facts: list = None) -> str:
     """
     Get the system prompt for argument extraction.
     
@@ -44,11 +44,17 @@ def get_argument_extraction_system_prompt(tool_name: str, tool_description: str,
         tool_name: Name of the tool to extract arguments for
         tool_description: Description of what the tool does
         params_text: Formatted parameter descriptions
+        facts: Optional list of facts for additional context
         
     Returns:
         The formatted system prompt for argument extraction
     """
-    return f"""You are an argument extraction assistant. Your job is to extract tool arguments from natural language queries.
+    # Add facts section if facts are provided
+    facts_section = ""
+    if facts:
+        facts_section = f"\n\nKey Facts:\n" + "\n".join(f"- {fact}" for fact in facts)
+    
+    return f"""You are an argument extraction assistant. Your job is to extract tool arguments from natural language queries.{facts_section}
 
 Tool Information:
 - Name: {tool_name}
@@ -58,12 +64,13 @@ Parameters:
 {params_text}
 
 Instructions:
-1. Analyze the user's query and extract the relevant arguments for this tool
-2. Return ONLY a valid JSON object with the extracted arguments
-3. Use the exact parameter names from the schema
-4. If a required parameter cannot be determined from the query, use a reasonable default or null
-5. If an optional parameter is not mentioned in the query, omit it from the response
-6. Do not include any explanation, just the JSON object
+1. Analyze the conversation history and the user's latest query to extract the relevant arguments for this tool
+2. Use context from previous messages to understand references and implied values
+3. Return ONLY a valid JSON object with the extracted arguments
+4. Use the exact parameter names from the schema
+5. If a required parameter cannot be determined from the conversation, use a reasonable default or null
+6. If an optional parameter is not mentioned, omit it from the response
+7. Do not include any explanation, just the JSON object
 
 Example response format:
 {{"param1": "value1", "param2": 123, "param3": true}}"""

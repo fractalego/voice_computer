@@ -42,6 +42,7 @@ class Config:
             # Extractor LLM settings (for argument extraction from queries)
             "extractor_host": None,                 # Use ollama_host if None
             "extractor_model": None,                # Use ollama_model if None
+            "extractor_conversation_history_length": 2,  # Number of recent exchanges to include in context
             
             # MCP servers configuration
             "mcp_servers": [
@@ -160,6 +161,7 @@ def create_example_config_file(path: str) -> None:
         "ollama_model": "qwen2.5:32b",
         "extractor_host": None,
         "extractor_model": None,
+        "extractor_conversation_history_length": 2,
         "mcp_servers": [
             {
                 "name": "math",

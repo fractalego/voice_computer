@@ -23,7 +23,7 @@ class ToolResult(NamedTuple):
 class ToolHandler:
     """Handler that uses entailment scoring to select and execute relevant tools."""
     
-    def __init__(self, ollama_client: OllamaClient, tools: List[MCPTools], config: Optional[Config] = None):
+    def __init__(self, ollama_client: OllamaClient, tools: List[MCPTools], config: Optional[Config] = None, conversation_history: Optional[List] = None):
         """
         Initialize the tool handler.
         
@@ -31,10 +31,12 @@ class ToolHandler:
             ollama_client: Ollama client for LLM communication
             tools: List of MCP tool groups
             config: Configuration object
+            conversation_history: Recent conversation history for context
         """
         self.ollama_client = ollama_client
         self.tools = tools
         self.config = config
+        self.conversation_history = conversation_history or []
         
         # Initialize entailer and extractor
         self.entailer = Entailer(config)
@@ -44,6 +46,10 @@ class ToolHandler:
         self.threshold = config.get_value("entailment_threshold") if config else 0.5
         
         _logger.info(f"ToolHandler initialized with {len(tools)} tool groups and threshold {self.threshold}")
+    
+    def update_conversation_history(self, conversation_history: List) -> None:
+        """Update the conversation history for context in tool extraction."""
+        self.conversation_history = conversation_history
     
     async def handle_query(self, query: str) -> List[ToolResult]:
         """
@@ -156,12 +162,21 @@ class ToolHandler:
         try:
             _logger.info(f"Executing tool {tool_info['name']} with score {score:.3f}")
             
-            # Extract arguments for this tool
+            # Get recent conversation history for context
+            history_length = self.config.get_value("extractor_conversation_history_length") if self.config else 2
+            recent_history = self._get_recent_conversation_history(history_length)
+            
+            # Get facts from config
+            facts = self.config.get_value("facts") if self.config else None
+            
+            # Extract arguments for this tool with context
             arguments = await self.extractor.extract_arguments(
                 query=query,
                 tool_name=tool_info['name'],
                 tool_description=tool_info['description'],
-                input_schema=tool_info['input_schema']
+                input_schema=tool_info['input_schema'],
+                conversation_history=recent_history,
+                facts=facts
             )
             
             _logger.debug(f"Extracted arguments for {tool_info['name']}: {arguments}")
@@ -219,6 +234,16 @@ class ToolHandler:
         # If tool has optional parameters only, empty arguments are acceptable
         _logger.debug(f"Tool {tool_info['name']} argument validation passed")
         return True
+    
+    def _get_recent_conversation_history(self, history_length: int) -> List:
+        """Get the most recent conversation exchanges for context."""
+        if not self.conversation_history or history_length <= 0:
+            return []
+        
+        # Get the last N exchanges (each exchange is user + assistant pair)
+        # We want history_length * 2 utterances (user + assistant pairs)
+        max_utterances = history_length * 2
+        return self.conversation_history[-max_utterances:] if len(self.conversation_history) > max_utterances else self.conversation_history
     
     def get_tool_summary(self) -> str:
         """Get a summary of available tools."""
