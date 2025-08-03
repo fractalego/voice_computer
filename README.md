@@ -191,10 +191,9 @@ python -m voice_computer.mcp_servers.time_mcp_server
 
 ### External MCP Servers
 
-- **Filesystem**: `pip install mcp-server-filesystem`
-- **Web Search**: `pip install mcp-server-brave-search`
-- **SQLite**: `pip install mcp-server-sqlite`
-- **Git**: `pip install mcp-server-git`
+You can integrate external MCP servers to extend functionality. Supported types include:
+- **SSE-based servers**: Use Server-Sent Events for real-time updates
+- **Stdio-based servers**: Use standard input/output for communication
 
 ### Adding MCP Servers
 

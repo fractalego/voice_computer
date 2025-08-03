@@ -110,12 +110,6 @@ class ExampleConfig(Config):
                 "path": "python",
                 "args": ["-m", "voice_computer.mcp_servers.time_mcp_server"]
             },
-            # Filesystem MCP server example (commented out)
-            # {
-            #     "name": "filesystem",
-            #     "path": "mcp-server-filesystem",
-            #     "args": ["--root", "/tmp"]
-            # },
         ]
         
         return config
