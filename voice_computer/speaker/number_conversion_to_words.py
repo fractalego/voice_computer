@@ -4,7 +4,7 @@ from num2words import num2words
 
 
 def convert_numbers_to_words(text):
-    words = text.split()
+    words = _clean_text(text).split()
     new_words = []
     for word in words:
         new_word = word
@@ -21,4 +21,9 @@ def convert_numbers_to_words(text):
 
 
 def _clean_text(text):
-    return text.replace(":", ": ").replace("-", " ")
+    text = text.replace(".", " . ")
+    text = text.replace(":", " : ")
+    text = text.replace("-", " ")
+    text = text.replace("°", " ")
+    text = text.replace("%", "  percent ")
+    return text
