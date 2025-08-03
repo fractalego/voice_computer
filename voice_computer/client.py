@@ -11,7 +11,12 @@ from .data_types import Messages, Utterance
 from .tool_handler import ToolHandler
 from .mcp_connector import MCPStdioConnector
 from .config import Config
-from .streaming_display import stream_colored_to_console_with_tts, stream_colored_to_console
+from .streaming_display import (
+    stream_colored_to_console_with_tts, 
+    stream_colored_to_console,
+    stream_colored_to_console_with_voice_interruption,
+    stream_colored_to_console_with_tts_and_voice_interruption
+)
 from .speaker import TTSSpeaker
 from .entailer import Entailer
 from .model_factory import get_model_factory
@@ -516,20 +521,22 @@ class VoiceComputerClient:
         batch_size = self._get_token_batch_size()
         flush_delay = self._get_flush_delay()
         
-        # Create streaming display task
+        # Create streaming display task with voice interruption capability
         if use_tts and self.tts_speaker:
-            # Use TTS streaming for voice mode
-            display_task = await stream_colored_to_console_with_tts(
+            # Use TTS streaming with voice interruption for voice mode
+            display_task = await stream_colored_to_console_with_tts_and_voice_interruption(
                 token_queue=token_queue,
                 tts_speaker=self.tts_speaker,
+                whisper_listener=self.voice_interface._listener,
                 prefix="bot> ",
                 batch_size=batch_size,
                 flush_delay=flush_delay
             )
         elif use_colored_output:
-            # Use colored output for text mode
-            display_task = await stream_colored_to_console(
+            # Use colored output with voice interruption for text mode
+            display_task = await stream_colored_to_console_with_voice_interruption(
                 token_queue=token_queue,
+                whisper_listener=self.voice_interface._listener,
                 prefix="bot> ",
                 batch_size=batch_size,
                 flush_delay=flush_delay
