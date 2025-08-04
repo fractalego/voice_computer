@@ -40,6 +40,7 @@ class VoiceInterface:
         self._deactivation_sound_path = sounds_dir / "deactivation.wav"
         self._deny_sound_path = sounds_dir / "deny.wav"
         self._computer_work_beep_path = sounds_dir / "computer_work_beep.wav"
+        self._computer_starting_to_work_path = sounds_dir / "computer_starting_to_work.wav"
         
         # Initialize sound file speaker
         try:
@@ -64,7 +65,7 @@ class VoiceInterface:
                 _logger.info("Using default activation hotword: computer")
         
         # Verify sound files exist
-        for sound_file in [self._activation_sound_path, self._deactivation_sound_path, self._computer_work_beep_path]:
+        for sound_file in [self._activation_sound_path, self._deactivation_sound_path, self._computer_work_beep_path, self._computer_starting_to_work_path]:
             if not sound_file.exists():
                 _logger.warning(f"Sound file not found: {sound_file}")
 
@@ -321,6 +322,13 @@ class VoiceInterface:
             await self._play_sound_file(self._computer_work_beep_path)
         else:
             _logger.warning("Computer work beep sound file not found")
+
+    async def play_computer_starting_to_work(self) -> None:
+        """Play computer starting to work sound when processing user query."""
+        if self._computer_starting_to_work_path.exists():
+            await self._play_sound_file(self._computer_starting_to_work_path)
+        else:
+            _logger.warning("Computer starting to work sound file not found")
 
     async def _play_sound_file(self, sound_file_path: Path) -> None:
         """

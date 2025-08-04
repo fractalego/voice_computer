@@ -351,6 +351,9 @@ class VoiceComputerClient:
                         user_input = self.voice_interface._remove_activation_word_and_normalize(user_input)
                         break
 
+                    # Play sound to indicate processing has started
+                    await self.voice_interface.play_computer_starting_to_work()
+
                     # Simple quality check - if text seems too short or unclear, ask for repeat
                     while self.voice_interface._is_listening and self.voice_interface._not_good_enough(user_input):
                         print(f"{COLOR_GREEN}user> {user_input}{COLOR_END}")
@@ -628,17 +631,17 @@ class VoiceComputerClient:
             
             # Check if any task raised an exception
             from .streaming_display import StreamingCompletionException
-            for task in done:
-                try:
-                    exception = task.exception()
-                    if exception:
-                        _logger.debug(f"Task {task.get_name()} raised exception: {exception}")
-                        # Don't re-raise StreamingCompletionException as it's expected
-                        if not isinstance(exception, StreamingCompletionException):
-                            raise exception
-                except Exception as e:
-                    # Ignore errors when accessing task exceptions (can happen during cleanup)
-                    _logger.debug(f"Error accessing exception for task {task.get_name()}: {e}")
+            # for task in done:
+            #     try:
+            #         # exception = task.exception()
+            #         # if exception:
+            #         #     _logger.debug(f"Task {task.get_name()} raised exception: {exception}")
+            #         #     if not isinstance(exception, StreamingCompletionException) \
+            #         #        and not isinstance(exception, asyncio.exceptions.CancelledError):
+            #         #         raise exception
+            #     except Exception as e:
+            #         # Ignore errors when accessing task exceptions (can happen during cleanup)
+            #         _logger.debug(f"Error accessing exception for task {task.get_name()}: {e}")
             
             # Get the result from the prediction task if it completed
             if prediction_task in done:
