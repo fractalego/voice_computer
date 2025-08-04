@@ -21,6 +21,7 @@ dependencies = [
     "num2words>=0.5.14",
     "fuzzywuzzy>=0.18.0",
     "python-levenshtein>=0.27.1",
+    "spotipy>=2.25.1",
 ]
 
 

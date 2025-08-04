@@ -75,6 +75,15 @@ class Config:
                     "name": "tfl",
                     "path": "python",
                     "args": ["-m", "voice_computer.mcp_servers.tfl_mcp_server"]
+                },
+                {
+                    "name": "spotify",
+                    "path": "python",
+                    "args": ["-m", "voice_computer.mcp_servers.spotify_mcp_server"],
+                    "env_vars": {
+                        "SPOTIFY_CLIENT_ID": "${SPOTIFY_CLIENT_ID}",
+                        "SPOTIFY_CLIENT_SECRET": "${SPOTIFY_CLIENT_SECRET}"
+                    }
                 }
             ],
             
@@ -239,6 +248,15 @@ def create_example_config_file(path: str) -> None:
                 "name": "tfl",
                 "path": "python",
                 "args": ["-m", "voice_computer.mcp_servers.tfl_mcp_server"]
+            },
+            {
+                "name": "spotify",
+                "path": "python",
+                "args": ["-m", "voice_computer.mcp_servers.spotify_mcp_server"],
+                "env_vars": {
+                    "SPOTIFY_CLIENT_ID": "${SPOTIFY_CLIENT_ID}",
+                    "SPOTIFY_CLIENT_SECRET": "${SPOTIFY_CLIENT_SECRET}"
+                }
             }
         ],
         "streaming": {
