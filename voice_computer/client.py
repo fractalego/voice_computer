@@ -5,6 +5,7 @@ Main voice computer client that integrates all components.
 import asyncio
 import logging
 from typing import Optional, List, Dict, Any
+from collections import deque
 
 from .voice_interface import VoiceInterface
 from .data_types import Messages, Utterance
@@ -95,6 +96,11 @@ class VoiceComputerClient:
         
         # Conversation history (list of utterances)
         self.conversation_history = []
+        
+        # Constant listening state
+        self._constant_listening_mode = False
+        self._command_queue = asyncio.Queue()
+        self._processing_command = False
         
         self._initialize_mcp_tools()
         
@@ -683,6 +689,224 @@ class VoiceComputerClient:
 
 
 
+
+
+    async def run_constant_listening_mode(self):
+        """
+        Run in constant listening mode where:
+        1. Background task continuously listens for hotwords
+        2. Commands are queued if they arrive during processing
+        3. Queued commands are joined together and processed as one
+        4. Processing uses existing streaming architecture
+        """
+        _logger.info("Starting constant listening mode...")
+        self._constant_listening_mode = True
+        
+        # Initialize voice interface
+        self.voice_interface.activate()
+        self._initialize_models()
+        
+        try:
+            # Start background listening task
+            background_listening_task = asyncio.create_task(
+                self._background_hotword_listener(),
+                name="background_listening"
+            )
+            
+            # Start command processing task
+            command_processing_task = asyncio.create_task(
+                self._process_command_queue(),
+                name="command_processing"
+            )
+            
+            # Run both tasks concurrently
+            await asyncio.gather(
+                background_listening_task,
+                command_processing_task,
+                return_exceptions=True
+            )
+            
+        except KeyboardInterrupt:
+            _logger.info("Constant listening mode interrupted by user")
+        except Exception as e:
+            _logger.error(f"Error in constant listening mode: {e}")
+        finally:
+            self._constant_listening_mode = False
+            self.voice_interface.deactivate()
+            _logger.info("Constant listening mode stopped")
+
+    async def _background_hotword_listener(self):
+        """
+        Continuously listen for hotwords and commands in the background.
+        When a command is detected, add it to the queue.
+        """
+        _logger.info("Background hotword listener started")
+        
+        while self._constant_listening_mode:
+            try:
+                # Wait for hotword activation (reuse existing voice interface logic)
+                _logger.debug("Listening for hotword activation...")
+                hotword, instruction = await self.voice_interface._wait_for_hotword()
+                
+                if instruction:
+                    # Hotword came with instruction - add directly to queue
+                    _logger.info(f"Hotword '{hotword}' detected with instruction: '{instruction}'")
+                    await self._command_queue.put(instruction)
+                else:
+                    # Just hotword detected - listen for command
+                    _logger.info(f"Hotword '{hotword}' detected, listening for command...")
+                    try:
+                        # Listen for the actual command (with timeout from config)
+                        constant_listening_config = self.config.get_value("constant_listening") or {}
+                        command_timeout = constant_listening_config.get("command_timeout", 10.0)
+                        
+                        command = await asyncio.wait_for(
+                            self.voice_interface._listener.input(),
+                            timeout=command_timeout
+                        )
+                        
+                        if command and command.strip():
+                            # Clean up the command
+                            cleaned_command = self.voice_interface._remove_activation_word_and_normalize(command)
+                            cleaned_command = self.voice_interface._remove_unclear(cleaned_command)
+                            
+                            if cleaned_command and len(cleaned_command.strip()) > 2:
+                                _logger.info(f"Command received: '{cleaned_command}'")
+                                await self._command_queue.put(cleaned_command)
+                            else:
+                                _logger.debug("Command too short or unclear, ignoring")
+                        
+                    except asyncio.TimeoutError:
+                        _logger.debug("Timeout waiting for command after hotword")
+                    except Exception as e:
+                        _logger.debug(f"Error getting command after hotword: {e}")
+            
+            except Exception as e:
+                _logger.error(f"Error in background hotword listener: {e}")
+                await asyncio.sleep(1.0)  # Brief pause before retrying
+
+    async def _process_command_queue(self):
+        """
+        Process commands from the queue. If multiple commands are queued,
+        join them together and process as a single command.
+        """
+        _logger.info("Command queue processor started")
+        
+        while self._constant_listening_mode:
+            try:
+                # Wait for at least one command
+                first_command = await self._command_queue.get()
+                _logger.info(f"Processing command: '{first_command}'")
+                
+                # Set processing flag
+                self._processing_command = True
+                
+                # Collect any additional commands that arrived while we were waiting
+                additional_commands = []
+                
+                # Non-blocking check for more commands (with configurable delay to collect rapid commands)
+                constant_listening_config = self.config.get_value("constant_listening") or {}
+                join_delay = constant_listening_config.get("command_join_delay", 0.1)
+                await asyncio.sleep(join_delay)
+                
+                while not self._command_queue.empty():
+                    try:
+                        additional_command = self._command_queue.get_nowait()
+                        additional_commands.append(additional_command)
+                        _logger.info(f"Additional command queued: '{additional_command}'")
+                    except asyncio.QueueEmpty:
+                        break
+                
+                # Join all commands together
+                if additional_commands:
+                    all_commands = [first_command] + additional_commands
+                    joined_command = " ".join(all_commands)
+                    _logger.info(f"Joined {len(all_commands)} commands: '{joined_command}'")
+                else:
+                    joined_command = first_command
+                
+                # Process the joined command using existing infrastructure
+                await self._process_single_command(joined_command)
+                
+                # Clear processing flag
+                self._processing_command = False
+                
+            except Exception as e:
+                _logger.error(f"Error processing command queue: {e}")
+                self._processing_command = False
+                await asyncio.sleep(1.0)  # Brief pause before retrying
+
+    async def _process_single_command(self, command: str):
+        """
+        Process a single command using the existing voice computer infrastructure.
+        This reuses all existing logic including streaming, tools, etc.
+        """
+        try:
+            # Check for exit command
+            if await self.entailer.should_exit(command, self.conversation_history):
+                _logger.info("Exit command detected in constant listening mode")
+                self._constant_listening_mode = False
+                return
+            
+            # Add user utterance to conversation history
+            user_utterance = Utterance(role="user", content=command)
+            self.conversation_history.append(user_utterance)
+            
+            # Process tools if available
+            tool_results = []
+            failed_tools = []
+            
+            if self.tool_handler:
+                try:
+                    # Play starting to work sound
+                    await self.voice_interface.play_computer_starting_to_work()
+                    
+                    # Update tool handler with current conversation history
+                    self.tool_handler.update_conversation_history(self.conversation_history)
+                    
+                    # Handle the query using tools
+                    tool_results, failed_tools = await self.tool_handler.handle_query(command)
+                    
+                    # Update tool results queues
+                    self.tool_results_queue.extend(tool_results)
+                    self.tool_results_queue = self.tool_results_queue[-5:]  # Keep last 5
+                    
+                    self.failed_tools_queue.extend(failed_tools)
+                    self.failed_tools_queue = self.failed_tools_queue[-5:]  # Keep last 5
+                    
+                except Exception as e:
+                    _logger.error(f"Error in tool handling: {e}")
+            
+            # Build messages for LLM
+            messages = self._build_messages_with_context(
+                command, tool_results, failed_tools, self.conversation_history
+            )
+            
+            # Process with streaming (reuse existing method)
+            response = await self._process_streaming_query(
+                messages, 
+                use_colored_output=True, 
+                use_tts=True
+            )
+            
+            # Add assistant response to conversation history
+            if response:
+                assistant_utterance = Utterance(role="assistant", content=response)
+                self.conversation_history.append(assistant_utterance)
+                
+                # Trim conversation history if too long (configurable)
+                constant_listening_config = self.config.get_value("constant_listening") or {}
+                max_history = constant_listening_config.get("max_conversation_history", 20)
+                if len(self.conversation_history) > max_history:
+                    self.conversation_history = self.conversation_history[-max_history:]
+        
+        except Exception as e:
+            _logger.error(f"Error processing single command: {e}")
+            # Try to provide error feedback
+            try:
+                await self.voice_interface.output("Sorry, I encountered an error processing that command.")
+            except Exception:
+                pass  # If even error output fails, just continue
 
 
 async def main():

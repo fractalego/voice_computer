@@ -101,7 +101,15 @@ class Config:
             ],
             
             # Tool results queue configuration
-            "tool_results_queue_length": 2  # Maximum number of tool results to keep in queue
+            "tool_results_queue_length": 2,  # Maximum number of tool results to keep in queue
+            
+            # Constant listening mode configuration
+            "constant_listening": {
+                "enabled": False,                   # Enable constant listening mode
+                "command_timeout": 10.0,           # Timeout in seconds for command after hotword
+                "command_join_delay": 0.1,         # Delay in seconds to collect rapid commands before joining
+                "max_conversation_history": 20     # Maximum conversation history to keep
+            }
         }
     
     def get_value(self, key: str) -> Any:
@@ -268,7 +276,13 @@ def create_example_config_file(path: str) -> None:
             "The name of this chatbot is 'Computer'",
             "You can check London transport status using TFL tools"
         ],
-        "tool_results_queue_length": 2
+        "tool_results_queue_length": 2,
+        "constant_listening": {
+            "enabled": False,
+            "command_timeout": 10.0,
+            "command_join_delay": 0.1,
+            "max_conversation_history": 20
+        }
     }
     
     with open(path, 'w', encoding='utf-8') as f:
