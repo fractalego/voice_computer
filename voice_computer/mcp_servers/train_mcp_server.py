@@ -93,7 +93,7 @@ async def find_stations_near_postcode(postcode: str, distance: int = 1000) -> st
 @mcp.tool()
 async def get_station_departures(station_code: str, limit: int = 10) -> str:
     """
-    Get live departure times from a train station
+    Get live departure times from a train station. This function can be used to see if the trains are running on time or delayed.
     
     Args:
         station_code: Three-letter station code (e.g., "PAD" for London Paddington)

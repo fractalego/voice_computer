@@ -3,7 +3,7 @@ name = "voice-computer"
 version = "1.0.0"
 description = "Voice-driven assistant with MCP (Model Context Protocol) integration via Ollama"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "requests>=2.28.0",
     "pydantic>=2.0.0",
@@ -31,7 +31,7 @@ build-backend = "hatchling.build"
 
 [tool.ruff]
 line-length = 88
-target-version = "py311"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]
@@ -39,4 +39,4 @@ ignore = ["E501"]
 
 [tool.black]
 line-length = 88
-target-version = ["py311"]
+target-version = ["py312"]

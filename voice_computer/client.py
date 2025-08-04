@@ -428,6 +428,8 @@ class VoiceComputerClient:
                     self.tts_speaker.cleanup()
                 except Exception as e:
                     _logger.debug(f"Error cleaning up TTS speaker: {e}")
+            # Clean up MCP connections
+            await self._cleanup_mcp_connections()
             _logger.info("Voice interaction loop ended")
     
     async def run_text_loop(self) -> None:
@@ -472,7 +474,33 @@ class VoiceComputerClient:
                     print("bot> Sorry, I encountered an error.")
                     
         finally:
+            # Clean up MCP connections
+            await self._cleanup_mcp_connections()
             _logger.info("Text interaction loop ended")
+    
+    async def _cleanup_mcp_connections(self) -> None:
+        """Clean up all MCP server connections."""
+        if hasattr(self, 'tool_handler') and self.tool_handler:
+            try:
+                # Disconnect from all MCP servers in tools
+                for mcp_tools in self.tool_handler.tools:
+                    if hasattr(mcp_tools, 'server') and mcp_tools.server:
+                        try:
+                            await mcp_tools.server.__aexit__(None, None, None)
+                            _logger.debug(f"Cleaned up MCP server: {mcp_tools.server_description}")
+                        except Exception as e:
+                            _logger.debug(f"Error cleaning up MCP server {mcp_tools.server_description}: {e}")
+                
+                # Also clean up individual connectors
+                for connector in self.mcp_tools:
+                    try:
+                        await connector.disconnect()
+                        _logger.debug(f"Disconnected MCP connector: {connector._description}")
+                    except Exception as e:
+                        _logger.debug(f"Error disconnecting MCP connector {connector._description}: {e}")
+                        
+            except Exception as e:
+                _logger.debug(f"Error during MCP cleanup: {e}")
     
     def add_mcp_server(self, name: str, path: str, args: Optional[List[str]] = None) -> None:
         """

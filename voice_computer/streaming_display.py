@@ -6,6 +6,7 @@ import asyncio
 import logging
 
 from typing import Optional, Callable
+from .stopwords import is_stopword
 
 # Utility function to check if a value is numeric
 def is_numeric(value):
@@ -100,7 +101,7 @@ class StreamingDisplay:
                 token_batch.append(token)
                 
                 # Display batch if it reaches the batch size
-                if len(token_batch) >= self.batch_size and not is_numeric(token_batch[-1]):
+                if len(token_batch) >= self.batch_size and not is_numeric(token_batch[-1]) and not is_stopword(token_batch[-1]):
                     batch_text = ''.join(token_batch)
                     self.output_handler(batch_text)
                     token_batch.clear()

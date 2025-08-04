@@ -16,10 +16,10 @@ mcp = FastMCP("time-tools")
 @mcp.tool()
 def current_time() -> str:
     """
-    Get the current time in HH:MM:SS format
+    Get the current time in HH:MM format
     """
     now = datetime.now()
-    return now.strftime("%H:%M:%S")
+    return now.strftime("%H:%M")
 
 
 @mcp.tool()
