@@ -103,8 +103,11 @@ class StreamingDisplay:
                 token_batch.append(token)
                 
                 # Display batch if it reaches the batch size
-                if len(token_batch) >= self.batch_size and not is_numeric(token_batch[-1]) and not is_stopword(token_batch[-1]):
-                    batch_text = ''.join(token_batch)
+                batch_text = ''.join(token_batch)
+                if (len(token_batch) >= self.batch_size and 
+                    not is_numeric(token_batch[-1]) and 
+                    not is_stopword(token_batch[-1]) and
+                    (batch_text[-1].isspace() or batch_text[-1] in '.,!?;:')):
                     self.output_handler(batch_text)
                     token_batch.clear()
 
