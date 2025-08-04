@@ -54,9 +54,11 @@ class StreamingDisplay:
         self.output_handler = output_handler or self._default_output_handler
         self.end_handler = end_handler or self._default_end_handler
         self.tts_speaker = tts_speaker
+        self.accumulated_text = ""  # Track all displayed text
 
     def _default_output_handler(self, text: str) -> None:
         """Default output handler that prints text without newline."""
+        self.accumulated_text += text
         print(text, end='', flush=True)
     
     def _default_end_handler(self) -> None:
@@ -219,6 +221,13 @@ class ColoredStreamingDisplay(StreamingDisplay):
     
     def _default_output_handler(self, text: str) -> None:
         """Colored output handler."""
+        # Track clean text for accumulated_text (without colors/prefix)
+        clean_text = text
+        if self._first_output and self.prefix in text:
+            clean_text = text.replace(self.prefix, "")
+        clean_text = clean_text.replace(self.color_start, "").replace(self.color_end, "")
+        self.accumulated_text += clean_text
+        
         if self._first_output:
             output = f"{self.color_start}{self.prefix}{text}"
             self._first_output = False
@@ -226,9 +235,9 @@ class ColoredStreamingDisplay(StreamingDisplay):
             output = text
 
         if self.tts_speaker:
-            text = text.replace(self.color_start, "").replace(self.color_end, "")
-            text = text.replace(self.prefix, "")
-            self.tts_speaker.add_text_batch(text)
+            tts_text = text.replace(self.color_start, "").replace(self.color_end, "")
+            tts_text = tts_text.replace(self.prefix, "")
+            self.tts_speaker.add_text_batch(tts_text)
         
         print(output, end='', flush=True)
 
@@ -243,13 +252,14 @@ async def stream_to_console(
     token_queue: asyncio.Queue,
     batch_size: int = 4,
     flush_delay: float = 1.0
-) -> asyncio.Task:
-    """Stream tokens to console with default settings."""
-    return await create_streaming_task(
-        token_queue=token_queue,
+) -> tuple[asyncio.Task, StreamingDisplay]:
+    """Stream tokens to console with default settings. Returns (task, display_instance)."""
+    display = StreamingDisplay(
         batch_size=batch_size,
         flush_delay=flush_delay
     )
+    task = asyncio.create_task(display.display_stream(token_queue))
+    return task, display
 
 
 async def stream_colored_to_console(
@@ -259,8 +269,8 @@ async def stream_colored_to_console(
     color_end: str = "\033[0m",     # Reset
     batch_size: int = 4,
     flush_delay: float = 1.0
-) -> asyncio.Task:
-    """Stream tokens to console with colored output."""
+) -> tuple[asyncio.Task, 'ColoredStreamingDisplay']:
+    """Stream tokens to console with colored output. Returns (task, display_instance)."""
     display = ColoredStreamingDisplay(
         batch_size=batch_size,
         flush_delay=flush_delay,
@@ -269,7 +279,8 @@ async def stream_colored_to_console(
         prefix=prefix
     )
     
-    return asyncio.create_task(display.display_stream(token_queue))
+    task = asyncio.create_task(display.display_stream(token_queue))
+    return task, display
 
 
 async def stream_colored_to_console_with_tts(
@@ -280,8 +291,8 @@ async def stream_colored_to_console_with_tts(
         color_end: str = "\033[0m",  # Reset
         batch_size: int = 4,
         flush_delay: float = 1.0
-) -> asyncio.Task:
-    """Stream tokens to console with colored output."""
+) -> tuple[asyncio.Task, 'ColoredStreamingDisplay']:
+    """Stream tokens to console with colored output. Returns (task, display_instance)."""
     display = ColoredStreamingDisplay(
         batch_size=batch_size,
         flush_delay=flush_delay,
@@ -291,5 +302,6 @@ async def stream_colored_to_console_with_tts(
         tts_speaker=tts_speaker,
     )
 
-    return asyncio.create_task(display.display_stream(token_queue))
+    task = asyncio.create_task(display.display_stream(token_queue))
+    return task, display
 

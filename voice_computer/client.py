@@ -555,7 +555,7 @@ class VoiceComputerClient:
         # Create streaming display task with voice interruption capability
         if use_tts and self.tts_speaker:
             # Use TTS streaming with voice interruption for voice mode
-            display_task = await stream_colored_to_console_with_tts(
+            display_task, display_instance = await stream_colored_to_console_with_tts(
                 token_queue=token_queue,
                 tts_speaker=self.tts_speaker,
                 prefix="bot> ",
@@ -564,7 +564,7 @@ class VoiceComputerClient:
             )
         elif use_colored_output:
             # Use colored output with voice interruption for text mode
-            display_task = await stream_colored_to_console(
+            display_task, display_instance = await stream_colored_to_console(
                 token_queue=token_queue,
                 prefix="bot> ",
                 batch_size=batch_size,
@@ -573,7 +573,7 @@ class VoiceComputerClient:
         else:
             # Basic streaming without color or TTS
             from .streaming_display import stream_to_console
-            display_task = await stream_to_console(
+            display_task, display_instance = await stream_to_console(
                 token_queue=token_queue,
                 batch_size=batch_size,
                 flush_delay=flush_delay
@@ -644,7 +644,9 @@ class VoiceComputerClient:
             else:
                 # If prediction task didn't complete, we need to handle this case
                 _logger.debug("Prediction task did not complete - was interrupted")
-                raise RuntimeError("Prediction task was interrupted")
+                # Return accumulated text with interrupted marker
+                accumulated_text = getattr(display_instance, 'accumulated_text', '')
+                return accumulated_text + " [interrupted]"
             
         except Exception as e:
             # Cancel any remaining tasks in case of exception
