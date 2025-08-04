@@ -21,6 +21,13 @@ from voice_computer.speaker.tts_speaker import TTSSpeaker
 _logger = logging.getLogger(__name__)
 
 
+class StreamingCompletionException(Exception):
+    """Exception to signal completion of streaming display."""
+    def __init__(self, message: str = "Streaming display completed"):
+        super().__init__(message)
+        self.message = message
+
+
 class StreamingDisplay:
     """Handles streaming text display with configurable batching and output."""
     
@@ -101,7 +108,6 @@ class StreamingDisplay:
                     if not is_speaking and self.tts_speaker is not None:
                         # Start TTS speaker task if not already running
                         speaker_task = asyncio.create_task(self.tts_speaker.speak_batch())
-                        _logger.debug(f"Created TTS speaker task: {speaker_task}")
                         is_speaking = True
                     
                     # Give other async tasks a chance to run
@@ -131,7 +137,6 @@ class StreamingDisplay:
                 await speaker_task
                 _logger.debug("TTS speaker task completed successfully")
             except asyncio.CancelledError:
-                _logger.debug("TTS speaker task was cancelled - checking who cancelled it")
                 # If the speaker task was cancelled, also cancel the TTS playback
                 if self.tts_speaker:
                     self.tts_speaker.cancel_playback()
@@ -142,8 +147,7 @@ class StreamingDisplay:
         _logger.debug("Streaming display completed")
         
         # Signal completion to client by throwing an exception
-        raise RuntimeError("Display stream completed")
-
+        raise StreamingCompletionException("Display stream completed")
 
 async def create_streaming_task(
     token_queue: asyncio.Queue,
