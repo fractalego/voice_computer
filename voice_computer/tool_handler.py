@@ -3,6 +3,7 @@ Tool handler for selecting and executing MCP tools based on entailment scoring.
 """
 
 import logging
+from collections import deque
 from typing import List, Dict, Any, Optional, NamedTuple, TYPE_CHECKING
 from .config import Config
 from .entailer import Entailer
@@ -51,6 +52,10 @@ class ToolHandler:
         self.conversation_history = conversation_history or []
         self.voice_interface = voice_interface
         
+        # Initialize tool results queue
+        queue_length = config.get_value("tool_results_queue_length") if config else 2
+        self.tool_results_queue = deque(maxlen=queue_length)
+        
         # Initialize entailer and extractor
         self.entailer = Entailer(config)
         self.extractor = ArgumentExtractor(config=config)
@@ -58,7 +63,7 @@ class ToolHandler:
         # Update entailer with tools once they're available
         self._update_entailer_tools()
         
-        _logger.info(f"ToolHandler initialized with {len(tools)} tool groups")
+        _logger.info(f"ToolHandler initialized with {len(tools)} tool groups and queue length {queue_length}")
     
     def update_conversation_history(self, conversation_history: List) -> None:
         """Update the conversation history for context in tool extraction."""
@@ -208,6 +213,11 @@ class ToolHandler:
                 tool_description=tool_info['description'],
                 tool_result=result
             )
+            
+            # Add to results queue
+            self.tool_results_queue.append(tool_result)
+            _logger.debug(f"Added tool result to queue. Queue size: {len(self.tool_results_queue)}")
+            
             return tool_result, None
             
         except Exception as e:
@@ -357,3 +367,20 @@ class ToolHandler:
         summary += "Groups:\n" + "\n".join(f"  {line}" for line in summary_lines)
         
         return summary
+    
+    def get_tool_results_queue(self) -> List[ToolResult]:
+        """Get all tool results currently in the queue."""
+        return list(self.tool_results_queue)
+    
+    def get_latest_tool_result(self) -> Optional[ToolResult]:
+        """Get the most recent tool result from the queue."""
+        return self.tool_results_queue[-1] if self.tool_results_queue else None
+    
+    def clear_tool_results_queue(self) -> None:
+        """Clear all tool results from the queue."""
+        self.tool_results_queue.clear()
+        _logger.debug("Tool results queue cleared")
+    
+    def get_tool_results_queue_size(self) -> int:
+        """Get the current size of the tool results queue."""
+        return len(self.tool_results_queue)

@@ -89,7 +89,10 @@ class Config:
             "facts": [
                 "The name of this chatbot is 'Computer'",  # Facts immediately accessible to the bot
                 "You can check London transport status using TFL tools"
-            ]
+            ],
+            
+            # Tool results queue configuration
+            "tool_results_queue_length": 2  # Maximum number of tool results to keep in queue
         }
     
     def get_value(self, key: str) -> Any:
@@ -246,7 +249,8 @@ def create_example_config_file(path: str) -> None:
         "facts": [
             "The name of this chatbot is 'Computer'",
             "You can check London transport status using TFL tools"
-        ]
+        ],
+        "tool_results_queue_length": 2
     }
     
     with open(path, 'w', encoding='utf-8') as f:
