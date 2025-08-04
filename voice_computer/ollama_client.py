@@ -114,6 +114,9 @@ class OllamaClient:
                     data=json.dumps(data),
                     timeout=600,
                 )
+        except asyncio.exceptions.CancelledError:
+            _logger.debug("Ollama streaming request was cancelled")
+            raise  # Re-raise CancelledError to allow proper task cancellation handling
         except requests.exceptions.ConnectionError as e:
             error_msg = f"Connection refused to Ollama at {self.host}. Please ensure Ollama is running and accessible."
             _logger.error(error_msg)

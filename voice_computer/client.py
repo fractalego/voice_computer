@@ -629,18 +629,28 @@ class VoiceComputerClient:
             # Check if any task raised an exception
             from .streaming_display import StreamingCompletionException
             for task in done:
-                if task.exception():
+                try:
                     exception = task.exception()
-                    _logger.debug(f"Task {task.get_name()} raised exception: {exception}")
-                    # Don't re-raise StreamingCompletionException as it's expected
-                    if not isinstance(exception, StreamingCompletionException):
-                        raise exception
+                    if exception:
+                        _logger.debug(f"Task {task.get_name()} raised exception: {exception}")
+                        # Don't re-raise StreamingCompletionException as it's expected
+                        if not isinstance(exception, StreamingCompletionException):
+                            raise exception
+                except Exception as e:
+                    # Ignore errors when accessing task exceptions (can happen during cleanup)
+                    _logger.debug(f"Error accessing exception for task {task.get_name()}: {e}")
             
             # Get the result from the prediction task if it completed
             if prediction_task in done:
-                _logger.debug("Prediction task completed successfully, getting result")
-                response = await prediction_task
-                return response.message
+                try:
+                    _logger.debug("Prediction task completed successfully, getting result")
+                    response = await prediction_task
+                    return response.message
+                except Exception as e:
+                    _logger.debug(f"Error getting result from prediction task: {e}")
+                    # Treat as interrupted
+                    accumulated_text = getattr(display_instance, 'accumulated_text', '')
+                    return accumulated_text + " [interrupted]"
             else:
                 # If prediction task didn't complete, we need to handle this case
                 _logger.debug("Prediction task did not complete - was interrupted")

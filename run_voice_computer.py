@@ -222,9 +222,35 @@ async def main():
 
 def cli_main():
     """CLI entry point that handles async execution."""
+    
+    def exception_handler(loop, context):
+        """Handle async exceptions, suppress MCP cleanup errors."""
+        exception = context.get('exception')
+        if exception:
+            # Suppress common MCP cleanup errors
+            if ('cancel scope' in str(exception) or 
+                'asynchronous generator' in str(exception) or
+                'aclose(): asynchronous generator is already running' in str(exception)):
+                # Log debug message but don't print to console
+                logger = logging.getLogger('asyncio')
+                logger.debug(f"Suppressed MCP cleanup error: {exception}")
+                return
+        
+        # For other exceptions, use default handling
+        loop.default_exception_handler(context)
+    
     try:
-        exit_code = asyncio.run(main())
-        sys.exit(exit_code)
+        # Set custom exception handler before running
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.set_exception_handler(exception_handler)
+        
+        try:
+            exit_code = loop.run_until_complete(main())
+            sys.exit(exit_code)
+        finally:
+            loop.close()
+            
     except KeyboardInterrupt:
         print("\nInterrupted by user")
         sys.exit(0)
