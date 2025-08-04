@@ -138,10 +138,11 @@ class StreamingDisplay:
                 _logger.debug("TTS speaker task was cancelled")
             except Exception as e:
                 _logger.error(f"Error in TTS speaker task: {e}")
-
-        _logger.debug("Streaming display about to complete")
         
         _logger.debug("Streaming display completed")
+        
+        # Signal completion to client by throwing an exception
+        raise RuntimeError("Display stream completed")
 
 
 async def create_streaming_task(

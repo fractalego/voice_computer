@@ -262,6 +262,7 @@ class TTSSpeaker(BaseSpeaker):
         self._playback_cancelled.set()
         if self._playback_thread and self._playback_thread.is_alive():
             self._playback_thread.join(timeout=1.0)
+        self._audio_queue.clear()
 
     def add_text_batch(self, batch_text):
         """
