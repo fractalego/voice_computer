@@ -46,7 +46,7 @@ class MCPTools(BaseModel):
     async def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
         """Call a tool by name with given arguments"""
         if not self.server:
-            raise RuntimeError("MCP server connection not available")
+            raise RuntimeError("MCP server connection not available or has been disconnected")
 
         return await self.server.direct_call_tool(tool_name, arguments)
 
@@ -133,5 +133,9 @@ class MCPStdioConnector:
     async def disconnect(self):
         """Disconnect from MCP server"""
         if self._server:
-            await self._server.__aexit__(None, None, None)
-            self._server = None
+            try:
+                await self._server.__aexit__(None, None, None)
+            except Exception as e:
+                _logger.debug(f"Error during MCP server disconnect: {e}")
+            finally:
+                self._server = None

@@ -66,34 +66,11 @@ class TTSSpeaker(BaseSpeaker):
 
     def _load_speaker_embedding(self):
         """Load speaker embedding for SpeechT5."""
-        try:
-            # Try to load from HuggingFace datasets (standard approach)
-            from datasets import load_dataset
-            
-            embeddings_dataset = load_dataset("Matthijs/cmu_arctic_x_vectors_speecht5", split="validation")
-            speaker_embeddings = torch.tensor(embeddings_dataset[7306]["xvector"]).unsqueeze(0)
-            
-            # Ensure correct dtype and device
-            speaker_embeddings = speaker_embeddings.to(dtype=self.torch_dtype, device=self.device)
-            _logger.info("Loaded speaker embeddings from CMU Arctic dataset")
-            return speaker_embeddings
-            
-        except Exception as e:
-            _logger.warning(f"Failed to load speaker embeddings from dataset: {e}")
-            
-            # Fallback to our custom embedding
-            try:
-                embedding = get_default_speaker_embedding()
-                embedding = embedding.to(dtype=self.torch_dtype, device=self.device)
-                _logger.info("Using fallback speaker embedding")
-                return embedding
-            except Exception as e2:
-                _logger.error(f"Failed to load fallback embedding: {e2}")
-                
-                # Last resort: create a random embedding
-                embedding = torch.randn(1, 512, dtype=self.torch_dtype, device=self.device) * 0.01
-                _logger.warning("Using random speaker embedding as last resort")
-                return embedding
+
+        embedding = get_default_speaker_embedding()
+        embedding = embedding.to(dtype=self.torch_dtype, device=self.device)
+        _logger.info("Using fallback speaker embedding")
+        return embedding
     
     def initialize(self):
         """Initialize the TTS model and audio system using model factory."""

@@ -480,27 +480,32 @@ class VoiceComputerClient:
     
     async def _cleanup_mcp_connections(self) -> None:
         """Clean up all MCP server connections."""
+        # Instead of trying to properly close connections (which can cause cancel scope issues),
+        # we'll just mark them as disconnected to prevent further use
         if hasattr(self, 'tool_handler') and self.tool_handler:
             try:
-                # Disconnect from all MCP servers in tools
+                # Mark all MCP server references as None to prevent further use
                 for mcp_tools in self.tool_handler.tools:
                     if hasattr(mcp_tools, 'server') and mcp_tools.server:
-                        try:
-                            await mcp_tools.server.__aexit__(None, None, None)
-                            _logger.debug(f"Cleaned up MCP server: {mcp_tools.server_description}")
-                        except Exception as e:
-                            _logger.debug(f"Error cleaning up MCP server {mcp_tools.server_description}: {e}")
-                
-                # Also clean up individual connectors
-                for connector in self.mcp_tools:
-                    try:
-                        await connector.disconnect()
-                        _logger.debug(f"Disconnected MCP connector: {connector._description}")
-                    except Exception as e:
-                        _logger.debug(f"Error disconnecting MCP connector {connector._description}: {e}")
+                        mcp_tools.server = None
+                        _logger.debug(f"Marked MCP server as disconnected: {mcp_tools.server_description}")
                         
             except Exception as e:
                 _logger.debug(f"Error during MCP cleanup: {e}")
+        
+        # Mark all connectors as disconnected
+        for connector in self.mcp_tools:
+            try:
+                if hasattr(connector, '_server'):
+                    connector._server = None
+                _logger.debug(f"Marked MCP connector as disconnected: {connector._description}")
+            except Exception as e:
+                _logger.debug(f"Error marking connector as disconnected: {e}")
+        
+        # Clear tool handler reference
+        if hasattr(self, 'tool_handler'):
+            self.tool_handler = None
+            _logger.debug("Cleared tool handler reference")
     
     def add_mcp_server(self, name: str, path: str, args: Optional[List[str]] = None) -> None:
         """
