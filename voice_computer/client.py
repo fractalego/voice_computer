@@ -618,12 +618,18 @@ class VoiceComputerClient:
                 except asyncio.CancelledError:
                     _logger.debug(f"Successfully cancelled task: {task.get_name()}")
                     pass
+                except Exception as e:
+                    _logger.debug(f"Task {task.get_name()} raised exception during cancellation: {e}")
             
             # Check if any task raised an exception
+            from .streaming_display import StreamingCompletionException
             for task in done:
                 if task.exception():
-                    _logger.debug(f"Task {task.get_name()} raised exception: {task.exception()}")
-                    raise task.exception()
+                    exception = task.exception()
+                    _logger.debug(f"Task {task.get_name()} raised exception: {exception}")
+                    # Don't re-raise StreamingCompletionException as it's expected
+                    if not isinstance(exception, StreamingCompletionException):
+                        raise exception
             
             # Get the result from the prediction task if it completed
             if prediction_task in done:
@@ -640,6 +646,10 @@ class VoiceComputerClient:
             for task in [prediction_task, display_task, listening_task]:
                 if not task.done():
                     task.cancel()
+                    try:
+                        await task
+                    except (asyncio.CancelledError, Exception):
+                        pass  # Ignore exceptions during cleanup
             raise e
 
     def _initialize_models(self):
