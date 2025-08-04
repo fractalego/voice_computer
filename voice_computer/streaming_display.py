@@ -86,6 +86,11 @@ class StreamingDisplay:
                     
                     # Call end handler
                     self.end_handler()
+                    
+                    # Cancel any ongoing TTS when streaming ends
+                    if speaker_task is not None and not speaker_task.done():
+                        speaker_task.cancel()
+                    
                     break
 
                 # Add token to batch
@@ -118,6 +123,11 @@ class StreamingDisplay:
         if speaker_task is not None:
             try:
                 await speaker_task
+            except asyncio.CancelledError:
+                # If the speaker task was cancelled, also cancel the TTS playback
+                if self.tts_speaker:
+                    self.tts_speaker.cancel_playback()
+                _logger.debug("TTS speaker task was cancelled")
             except Exception as e:
                 _logger.error(f"Error in TTS speaker task: {e}")
 

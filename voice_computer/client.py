@@ -564,6 +564,9 @@ class VoiceComputerClient:
                     # Cancel other tasks immediately when voice interruption occurs
                     prediction_task.cancel()
                     display_task.cancel()
+                    # Cancel TTS playback if active
+                    if self.tts_speaker:
+                        self.tts_speaker.cancel_playback()
                     raise e
             
             listening_task = asyncio.create_task(listening_with_cancellation())

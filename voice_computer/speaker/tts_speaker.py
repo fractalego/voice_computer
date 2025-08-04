@@ -48,6 +48,10 @@ class TTSSpeaker(BaseSpeaker):
         self._shaved_float_margin = 512
         self._audio_queue = []
         
+        # Thread-based playback control
+        self._playback_cancelled = threading.Event()
+        self._playback_thread = None
+        
 
         _logger.info(f"TTSSpeaker created with model {model_name} on device {self.device}")
     
@@ -189,6 +193,42 @@ class TTSSpeaker(BaseSpeaker):
         except Exception as e:
             _logger.error(f"Error playing audio: {e}")
 
+    def _play_audio_threaded(self):
+        """Play all audio in queue using a dedicated thread for smooth playback."""
+        try:
+            if not self._audio_queue:
+                return
+                
+            stream = self._pyaudio.open(
+                format=pyaudio.paFloat32,
+                channels=1,
+                rate=self._sample_rate,
+                output=True,
+                frames_per_buffer=1024
+            )
+            
+            while self._audio_queue and not self._playback_cancelled.is_set():
+                audio_data, text = self._audio_queue.pop(0)
+                
+                # Convert torch tensor to numpy if needed
+                if torch.is_tensor(audio_data):
+                    audio_data = audio_data.cpu().float().numpy()
+                
+                # Ensure correct format
+                if audio_data.dtype != np.float32:
+                    audio_data = audio_data.astype(np.float32)
+                
+                # Play audio in one smooth operation (no chunking needed in thread)
+                if not self._playback_cancelled.is_set():
+                    stream.write(audio_data.tobytes())
+            
+            # Clean up
+            stream.stop_stream()
+            stream.close()
+            
+        except Exception as e:
+            _logger.error(f"Error in threaded audio playback: {e}")
+
     def _play_audio(self, audio_data, sample_rate: int):
         """Play audio data using PyAudio (synchronous version for backward compatibility)."""
         try:
@@ -216,6 +256,12 @@ class TTSSpeaker(BaseSpeaker):
             
         except Exception as e:
             _logger.error(f"Error playing audio: {e}")
+    
+    def cancel_playback(self):
+        """Cancel any ongoing audio playback."""
+        self._playback_cancelled.set()
+        if self._playback_thread and self._playback_thread.is_alive():
+            self._playback_thread.join(timeout=1.0)
 
     def add_text_batch(self, batch_text):
         """
@@ -239,17 +285,20 @@ class TTSSpeaker(BaseSpeaker):
             raise
 
     async def speak_batch(self):
-        while self._audio_queue:
-            audio_data, text = self._audio_queue.pop(0)
-            try:
-                # Use async audio playback that yields control during playback
-                await self._play_audio_async(audio_data, self._sample_rate)
-                    
-            except Exception as e:
-                _logger.error(f"Error playing audio batch: {e}")
-                raise
-        await asyncio.sleep(0.2)
-
+        if not self._audio_queue:
+            return
+            
+        # Reset cancellation flag
+        self._playback_cancelled.clear()
+        
+        # Start audio playback in a separate thread for smooth audio
+        self._playback_thread = threading.Thread(target=self._play_audio_threaded)
+        self._playback_thread.start()
+        
+        # Wait for the thread to complete while allowing async tasks to run
+        while self._playback_thread.is_alive():
+            await asyncio.sleep(0.01)  # Yield control to allow voice detection
+        
         # Clear the queue after processing
         self._audio_queue.clear()
     
