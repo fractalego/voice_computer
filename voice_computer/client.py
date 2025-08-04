@@ -14,8 +14,6 @@ from .config import Config
 from .streaming_display import (
     stream_colored_to_console_with_tts, 
     stream_colored_to_console,
-    stream_colored_to_console_with_voice_interruption,
-    stream_colored_to_console_with_tts_and_voice_interruption
 )
 from .speaker import TTSSpeaker
 from .entailer import Entailer
@@ -524,7 +522,7 @@ class VoiceComputerClient:
         # Create streaming display task with voice interruption capability
         if use_tts and self.tts_speaker:
             # Use TTS streaming with voice interruption for voice mode
-            display_task = await stream_colored_to_console_with_tts_and_voice_interruption(
+            display_task = await stream_colored_to_console_with_tts(
                 token_queue=token_queue,
                 tts_speaker=self.tts_speaker,
                 whisper_listener=self.voice_interface._listener,
@@ -534,7 +532,7 @@ class VoiceComputerClient:
             )
         elif use_colored_output:
             # Use colored output with voice interruption for text mode
-            display_task = await stream_colored_to_console_with_voice_interruption(
+            display_task = await stream_colored_to_console(
                 token_queue=token_queue,
                 whisper_listener=self.voice_interface._listener,
                 prefix="bot> ",

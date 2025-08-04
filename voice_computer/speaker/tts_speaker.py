@@ -2,6 +2,7 @@
 TTS Speaker implementation using microsoft/speecht5_tts with streaming support.
 """
 
+import asyncio
 import logging
 import time
 
@@ -151,7 +152,7 @@ class TTSSpeaker(BaseSpeaker):
             _logger.debug(f"Speaker embedding dtype: {self._speaker_embedding.dtype if self._speaker_embedding is not None else 'None'}")
             raise
     
-    def _play_audio(self, audio_data, sample_rate: int, stream: Optional[pyaudio.Stream] = None):
+    def _play_audio(self, audio_data, sample_rate: int):
         """Play audio data using PyAudio."""
         try:
             # Convert torch tensor to numpy if needed
@@ -161,23 +162,20 @@ class TTSSpeaker(BaseSpeaker):
             # Ensure correct format
             if audio_data.dtype != np.float32:
                 audio_data = audio_data.astype(np.float32)
-            
-            # Open stream for this audio chunk
-            if not stream:
-                stream = self._pyaudio.open(
-                    format=pyaudio.paFloat32,
-                    channels=1,
-                    rate=sample_rate,
-                    output=True
-                )
+
+            stream = self._pyaudio.open(
+                format=pyaudio.paFloat32,
+                channels=1,
+                rate=sample_rate,
+                output=True
+            )
             
             # Play audio
             stream.write(audio_data.tobytes())
             
             # Clean up
-            if not stream:
-                stream.stop_stream()
-                stream.close()
+            stream.stop_stream()
+            stream.close()
             
         except Exception as e:
             _logger.error(f"Error playing audio: {e}")
@@ -203,27 +201,18 @@ class TTSSpeaker(BaseSpeaker):
             _logger.error(f"Error in TTS synthesis for batch: {e}")
             raise
 
-    def speak_batch(self):
-        stream = self._pyaudio.open(
-            format=pyaudio.paFloat32,
-            channels=1,
-            rate=self._sample_rate,
-            output=True,
-            frames_per_buffer=1024
-        )
+    async def speak_batch(self):
         while self._audio_queue:
             audio_data, text = self._audio_queue.pop(0)
             try:
-                self._play_audio(audio_data, self._sample_rate, stream)
+                self._play_audio(audio_data, self._sample_rate)
+                # Allow other async tasks to run during audio playback
+                await asyncio.sleep(0.01)
                     
             except Exception as e:
                 _logger.error(f"Error playing audio batch: {e}")
                 raise
-        time.sleep(0.2)
-
-        stream.stop_stream()
-        stream.clear()
-        stream.close()
+        await asyncio.sleep(0.2)
 
         # Clear the queue after processing
         self._audio_queue.clear()

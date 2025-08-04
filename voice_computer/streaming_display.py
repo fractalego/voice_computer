@@ -4,7 +4,6 @@ Streaming text display utilities for real-time token output with TTS integration
 
 import asyncio
 import logging
-import threading
 
 from typing import Optional, Callable
 
@@ -68,12 +67,9 @@ class StreamingDisplay:
         
         _logger.debug(f"Starting streaming display with batch_size={self.batch_size}, flush_delay={self.flush_delay}")
 
-        # create a thread to handle TTS if a speaker is provided
-
+        # create an async task to handle TTS if a speaker is provided
         is_speaking = False
-        speaker_thread = None
-        if self.tts_speaker:
-            speaker_thread = threading.Thread(target=self.tts_speaker.speak_batch)
+        speaker_task = None
 
         while not stream_complete:
             try:
@@ -101,9 +97,9 @@ class StreamingDisplay:
                     self.output_handler(batch_text)
                     token_batch.clear()
 
-                    if not is_speaking and speaker_thread is not None:
-                        # Start TTS speaker thread if not already running
-                        speaker_thread.start()
+                    if not is_speaking and self.tts_speaker is not None:
+                        # Start TTS speaker task if not already running
+                        speaker_task = asyncio.create_task(self.tts_speaker.speak_batch())
                         is_speaking = True
                     
                     # Give other async tasks a chance to run
@@ -119,8 +115,11 @@ class StreamingDisplay:
                 # Give other async tasks a chance to run
                 await asyncio.sleep(0.01)
 
-        if speaker_thread is not None:
-            speaker_thread.join()
+        if speaker_task is not None:
+            try:
+                await speaker_task
+            except Exception as e:
+                _logger.error(f"Error in TTS speaker task: {e}")
 
         _logger.debug("Streaming display completed")
 
@@ -268,166 +267,3 @@ async def stream_colored_to_console_with_tts(
 
     return asyncio.create_task(display.display_stream(token_queue))
 
-
-async def stream_colored_to_console_with_voice_interruption(
-    token_queue: asyncio.Queue,
-    whisper_listener,
-    prefix: str = "bot> ",
-    color_start: str = "\033[94m",  # Blue
-    color_end: str = "\033[0m",     # Reset
-    batch_size: int = 4,
-    flush_delay: float = 0.1
-) -> asyncio.Task:
-    """
-    Stream tokens to console with colored output and concurrent voice listening.
-    If user speaks (detected by whisper), interrupt the streaming.
-    """
-    display = ColoredStreamingDisplay(
-        batch_size=batch_size,
-        flush_delay=flush_delay,
-        color_start=color_start,
-        color_end=color_end,
-        prefix=prefix
-    )
-    
-    async def voice_listener_task():
-        """Listen for voice input and return when speech is detected."""
-        try:
-            # Give other tasks a chance to run before starting voice listening
-            await asyncio.sleep(0.1)
-            # This will block until voice input is detected
-            transcription = await whisper_listener.input()
-            _logger.debug(f"Voice interruption detected, discarding transcription: '{transcription}'")
-            return "VOICE_DETECTED"
-        except Exception as e:
-            _logger.debug(f"Error in voice listener: {e}")
-            return None
-    
-    async def streaming_task():
-        """Handle the streaming display."""
-        try:
-            # Give voice listener a chance to start
-            await asyncio.sleep(0.05)
-            await display.display_stream(token_queue)
-            return "STREAMING_COMPLETE"
-        except Exception as e:
-            _logger.debug(f"Error in streaming: {e}")
-            return "STREAMING_ERROR"
-    
-    # Run both tasks concurrently, return when first completes
-    done, pending = await asyncio.wait(
-        [
-            asyncio.create_task(streaming_task()),
-            asyncio.create_task(voice_listener_task())
-        ],
-        return_when=asyncio.FIRST_COMPLETED
-    )
-    
-    # Cancel any remaining tasks
-    for task in pending:
-        task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
-    
-    # Get the result from the completed task
-    completed_task = done.pop()
-    result = await completed_task
-    
-    if result == "VOICE_DETECTED":
-        _logger.info("Streaming interrupted by voice activity")
-        # Clear any remaining tokens in the queue
-        while not token_queue.empty():
-            try:
-                token_queue.get_nowait()
-            except asyncio.QueueEmpty:
-                break
-    
-    return completed_task
-
-
-async def stream_colored_to_console_with_tts_and_voice_interruption(
-    token_queue: asyncio.Queue,
-    tts_speaker: TTSSpeaker,
-    whisper_listener,
-    prefix: str = "bot> ",
-    color_start: str = "\033[94m",  # Blue
-    color_end: str = "\033[0m",     # Reset
-    batch_size: int = 4,
-    flush_delay: float = 0.1
-) -> asyncio.Task:
-    """
-    Stream tokens to console with colored output, TTS, and concurrent voice listening.
-    If user speaks (detected by whisper), interrupt both streaming and TTS.
-    """
-    display = ColoredStreamingDisplay(
-        batch_size=batch_size,
-        flush_delay=flush_delay,
-        color_start=color_start,
-        color_end=color_end,
-        prefix=prefix,
-        tts_speaker=tts_speaker
-    )
-    
-    async def voice_listener_task():
-        """Listen for voice input and return when speech is detected."""
-        try:
-            # Give other tasks a chance to run before starting voice listening
-            await asyncio.sleep(0.1)
-            # This will block until voice input is detected
-            transcription = await whisper_listener.input()
-            _logger.debug(f"Voice interruption detected, discarding transcription: '{transcription}'")
-            return "VOICE_DETECTED"
-        except Exception as e:
-            _logger.debug(f"Error in voice listener: {e}")
-            return None
-    
-    async def streaming_task():
-        """Handle the streaming display with TTS."""
-        try:
-            # Give voice listener a chance to start
-            await asyncio.sleep(0.05)
-            await display.display_stream(token_queue)
-            # After streaming is complete, play any batched TTS
-            if tts_speaker and tts_speaker._audio_queue:
-                tts_speaker.speak_batch()
-            return "STREAMING_COMPLETE"
-        except Exception as e:
-            _logger.debug(f"Error in streaming: {e}")
-            return "STREAMING_ERROR"
-    
-    # Run both tasks concurrently, return when first completes
-    done, pending = await asyncio.wait(
-        [
-            asyncio.create_task(streaming_task()),
-            asyncio.create_task(voice_listener_task())
-        ],
-        return_when=asyncio.FIRST_COMPLETED
-    )
-    
-    # Cancel any remaining tasks
-    for task in pending:
-        task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
-    
-    # Get the result from the completed task
-    completed_task = done.pop()
-    result = await completed_task
-    
-    if result == "VOICE_DETECTED":
-        _logger.info("Streaming and TTS interrupted by voice activity")
-        # Clear any remaining tokens in the queue
-        while not token_queue.empty():
-            try:
-                token_queue.get_nowait()
-            except asyncio.QueueEmpty:
-                break
-        # Clear TTS queue to stop any pending speech
-        if tts_speaker:
-            tts_speaker._audio_queue.clear()
-    
-    return completed_task
