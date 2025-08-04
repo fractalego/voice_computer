@@ -410,6 +410,35 @@ class WhisperListener:
             _logger.error(f"Error processing audio: {e}")
             return {"transcription": "[unclear]", "score": 0.0, "logp": None}
 
+    async def detect_voice_activity(self) -> None:
+        """
+        Monitor audio for voice activity and return immediately when detected.
+        This is much faster than full transcription - just monitors volume levels.
+        """
+        if not self.is_active:
+            self.activate()
+            
+        _logger.debug(f"Starting voice activity detection, volume threshold: {self.volume_threshold}")
+        
+        while True:
+            await asyncio.sleep(0.01)  # Very short sleep for responsive detection
+            
+            try:
+                # Read a small audio chunk
+                inp = self.stream.read(self.chunk, exception_on_overflow=False)
+                if inp:
+                    # Calculate RMS volume
+                    rms_val = self._rms(inp)
+                    
+                    # Return immediately if volume exceeds threshold
+                    if rms_val > self.volume_threshold:
+                        _logger.debug(f"Voice activity detected! RMS={rms_val:.4f} > threshold={self.volume_threshold:.4f}")
+                        return  # Voice activity detected, return immediately
+                        
+            except Exception as e:
+                _logger.debug(f"Error in voice activity detection: {e}")
+                continue
+
     def _process_audio_sync(self, waveform: np.ndarray, hotword: Optional[str] = None) -> dict:
         """Synchronous audio processing (adapted from WhisperHandler)."""
         try:

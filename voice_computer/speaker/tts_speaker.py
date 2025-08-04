@@ -4,6 +4,7 @@ TTS Speaker implementation using microsoft/speecht5_tts with streaming support.
 
 import asyncio
 import logging
+import threading
 import time
 
 import torch
@@ -152,8 +153,44 @@ class TTSSpeaker(BaseSpeaker):
             _logger.debug(f"Speaker embedding dtype: {self._speaker_embedding.dtype if self._speaker_embedding is not None else 'None'}")
             raise
     
+    async def _play_audio_async(self, audio_data, sample_rate: int):
+        """Play audio data using PyAudio with async yielding during playback."""
+        try:
+            # Convert torch tensor to numpy if needed
+            if torch.is_tensor(audio_data):
+                audio_data = audio_data.cpu().float().numpy()
+            
+            # Ensure correct format
+            if audio_data.dtype != np.float32:
+                audio_data = audio_data.astype(np.float32)
+
+            stream = self._pyaudio.open(
+                format=pyaudio.paFloat32,
+                channels=1,
+                rate=sample_rate,
+                output=True
+            )
+            
+            # Play audio in chunks to allow yielding control
+            # Use larger chunks for smooth audio with less frequent yielding
+            chunk_size = 65536  # Larger chunks for smoother audio
+            audio_bytes = audio_data.tobytes()
+            
+            for i in range(0, len(audio_bytes), chunk_size):
+                chunk = audio_bytes[i:i + chunk_size]
+                stream.write(chunk)
+                # Yield control less frequently but enough for voice detection
+                await asyncio.sleep(0.05)
+            
+            # Clean up
+            stream.stop_stream()
+            stream.close()
+            
+        except Exception as e:
+            _logger.error(f"Error playing audio: {e}")
+
     def _play_audio(self, audio_data, sample_rate: int):
-        """Play audio data using PyAudio."""
+        """Play audio data using PyAudio (synchronous version for backward compatibility)."""
         try:
             # Convert torch tensor to numpy if needed
             if torch.is_tensor(audio_data):
@@ -205,9 +242,8 @@ class TTSSpeaker(BaseSpeaker):
         while self._audio_queue:
             audio_data, text = self._audio_queue.pop(0)
             try:
-                self._play_audio(audio_data, self._sample_rate)
-                # Allow other async tasks to run during audio playback
-                await asyncio.sleep(0.01)
+                # Use async audio playback that yields control during playback
+                await self._play_audio_async(audio_data, self._sample_rate)
                     
             except Exception as e:
                 _logger.error(f"Error playing audio batch: {e}")

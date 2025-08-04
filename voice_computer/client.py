@@ -525,7 +525,6 @@ class VoiceComputerClient:
             display_task = await stream_colored_to_console_with_tts(
                 token_queue=token_queue,
                 tts_speaker=self.tts_speaker,
-                whisper_listener=self.voice_interface._listener,
                 prefix="bot> ",
                 batch_size=batch_size,
                 flush_delay=flush_delay
@@ -534,7 +533,6 @@ class VoiceComputerClient:
             # Use colored output with voice interruption for text mode
             display_task = await stream_colored_to_console(
                 token_queue=token_queue,
-                whisper_listener=self.voice_interface._listener,
                 prefix="bot> ",
                 batch_size=batch_size,
                 flush_delay=flush_delay
@@ -557,14 +555,51 @@ class VoiceComputerClient:
                     token_queue=token_queue
                 )
             )
+
+            # Create a wrapper for the listening task that cancels other tasks immediately
+            async def listening_with_cancellation():
+                try:
+                    await self.voice_interface.throw_exception_on_voice_activity()
+                except Exception as e:
+                    # Cancel other tasks immediately when voice interruption occurs
+                    prediction_task.cancel()
+                    display_task.cancel()
+                    raise e
             
-            # Wait for both tasks to complete
-            response, _ = await asyncio.gather(prediction_task, display_task)
+            listening_task = asyncio.create_task(listening_with_cancellation())
             
-            return response.message
+            # Wait for the first task to complete
+            done, pending = await asyncio.wait(
+                [listening_task, prediction_task, display_task],
+                return_when=asyncio.FIRST_COMPLETED
+            )
+            
+            # Cancel all pending tasks
+            for task in pending:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+            
+            # Check if any task raised an exception
+            for task in done:
+                if task.exception():
+                    raise task.exception()
+            
+            # Get the result from the prediction task if it completed
+            if prediction_task in done:
+                response = await prediction_task
+                return response.message
+            else:
+                # If prediction task didn't complete, we need to handle this case
+                raise RuntimeError("Prediction task was interrupted")
             
         except Exception as e:
-            display_task.cancel()
+            # Cancel any remaining tasks in case of exception
+            for task in [prediction_task, display_task, listening_task]:
+                if not task.done():
+                    task.cancel()
             raise e
 
     def _initialize_models(self):

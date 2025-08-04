@@ -378,3 +378,23 @@ class VoiceInterface:
 
     def initialize(self):
         self._listener.initialize_whisper()
+
+    async def throw_exception_on_intelligible_speech(self):
+        await self._listener.input()
+        raise VoiceInterruptionException("Intelligible speech detected, interrupting voice input.")
+    
+    async def throw_exception_on_voice_activity(self):
+        """
+        Monitor audio volume and throw exception immediately when voice activity is detected.
+        This is much faster than full speech transcription.
+        """
+        await self._listener.detect_voice_activity()
+        raise VoiceInterruptionException("Voice activity detected, interrupting output.")
+
+
+class VoiceInterruptionException(Exception):
+    """Exception raised when voice input is interrupted."""
+
+    def __init__(self, message: str = "Voice input interrupted"):
+        super().__init__(message)
+        _logger.warning(message)

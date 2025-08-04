@@ -103,7 +103,7 @@ class StreamingDisplay:
                         is_speaking = True
                     
                     # Give other async tasks a chance to run
-                    await asyncio.sleep(0.01)
+                    await asyncio.sleep(0.05)
 
             except asyncio.TimeoutError:
                 # Display partial batch on timeout if there are tokens waiting
