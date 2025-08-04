@@ -41,7 +41,7 @@ class SimpleConfig:
             "streaming": {
                 "enabled": True,
                 "token_batch_size": 4,
-                "flush_delay": 0.1
+                "flush_delay": 1.0
             },
             "exit_sentences": [
                 "please stop this conversation",
@@ -511,7 +511,7 @@ class VoiceComputerClient:
     def _get_flush_delay(self) -> float:
         """Get the configured flush delay."""
         streaming_config = self.config.get_value("streaming") or {}
-        return streaming_config.get("flush_delay", 0.1)
+        return streaming_config.get("flush_delay", 1.0)
     
     async def _process_streaming_query(self, messages: Messages, use_colored_output: bool = True, use_tts: bool = False) -> str:
         """Process query with streaming output to console and optional TTS."""
@@ -562,6 +562,7 @@ class VoiceComputerClient:
                     await self.voice_interface.throw_exception_on_voice_activity()
                 except Exception as e:
                     # Cancel other tasks immediately when voice interruption occurs
+                    _logger.info("Voice activity detected, cancelling prediction and display tasks")
                     prediction_task.cancel()
                     display_task.cancel()
                     # Cancel TTS playback if active
@@ -571,31 +572,39 @@ class VoiceComputerClient:
             
             listening_task = asyncio.create_task(listening_with_cancellation())
             
-            # Wait for the first task to complete
+            # Wait for the first exception (voice interruption) or all tasks to complete
             done, pending = await asyncio.wait(
                 [listening_task, prediction_task, display_task],
-                return_when=asyncio.FIRST_COMPLETED
+                return_when=asyncio.FIRST_EXCEPTION
             )
-            
+            ## logs the status of the tasks
+            _logger.debug(f"Tasks done: {[task.get_name() for task in done]}")
+            _logger.debug(f"Tasks pending: {[task.get_name() for task in pending]}")
+
             # Cancel all pending tasks
             for task in pending:
+                _logger.debug(f"Cancelling pending task: {task.get_name()}")
                 task.cancel()
                 try:
                     await task
                 except asyncio.CancelledError:
+                    _logger.debug(f"Successfully cancelled task: {task.get_name()}")
                     pass
             
             # Check if any task raised an exception
             for task in done:
                 if task.exception():
+                    _logger.debug(f"Task {task.get_name()} raised exception: {task.exception()}")
                     raise task.exception()
             
             # Get the result from the prediction task if it completed
             if prediction_task in done:
+                _logger.debug("Prediction task completed successfully, getting result")
                 response = await prediction_task
                 return response.message
             else:
                 # If prediction task didn't complete, we need to handle this case
+                _logger.debug("Prediction task did not complete - was interrupted")
                 raise RuntimeError("Prediction task was interrupted")
             
         except Exception as e:

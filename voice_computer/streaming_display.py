@@ -27,7 +27,7 @@ class StreamingDisplay:
     def __init__(
         self,
         batch_size: int = 4,
-        flush_delay: float = 0.1,
+        flush_delay: float = 1.0,
         output_handler: Optional[Callable[[str], None]] = None,
         end_handler: Optional[Callable[[], None]] = None,
         tts_speaker: Optional[TTSSpeaker] = None,
@@ -77,19 +77,15 @@ class StreamingDisplay:
                 token = await asyncio.wait_for(token_queue.get(), timeout=self.flush_delay)
                 
                 if token is None:  # End of stream signal
-                    stream_complete = True
                     # Display any remaining tokens
                     if token_batch:
                         remaining_text = ''.join(token_batch)
                         self.output_handler(remaining_text)
                         token_batch.clear()
+                    stream_complete = True
                     
                     # Call end handler
                     self.end_handler()
-                    
-                    # Cancel any ongoing TTS when streaming ends
-                    if speaker_task is not None and not speaker_task.done():
-                        speaker_task.cancel()
                     
                     break
 
@@ -105,6 +101,7 @@ class StreamingDisplay:
                     if not is_speaking and self.tts_speaker is not None:
                         # Start TTS speaker task if not already running
                         speaker_task = asyncio.create_task(self.tts_speaker.speak_batch())
+                        _logger.debug(f"Created TTS speaker task: {speaker_task}")
                         is_speaking = True
                     
                     # Give other async tasks a chance to run
@@ -112,6 +109,7 @@ class StreamingDisplay:
 
             except asyncio.TimeoutError:
                 # Display partial batch on timeout if there are tokens waiting
+                _logger.info("Timeout waiting for streaming display")
                 if token_batch:
                     batch_text = ''.join(token_batch)
                     self.output_handler(batch_text)
@@ -120,10 +118,20 @@ class StreamingDisplay:
                 # Give other async tasks a chance to run
                 await asyncio.sleep(0.01)
 
+        # Final safety flush - display any remaining tokens in the batch
+        if token_batch:
+            remaining_text = ''.join(token_batch)
+            self.output_handler(remaining_text)
+            token_batch.clear()
+            _logger.debug(f"Final flush displayed remaining tokens: '{remaining_text}'")
+
         if speaker_task is not None:
+            _logger.debug(f"Waiting for speaker task to complete. Task done: {speaker_task.done()}")
             try:
                 await speaker_task
+                _logger.debug("TTS speaker task completed successfully")
             except asyncio.CancelledError:
+                _logger.debug("TTS speaker task was cancelled - checking who cancelled it")
                 # If the speaker task was cancelled, also cancel the TTS playback
                 if self.tts_speaker:
                     self.tts_speaker.cancel_playback()
@@ -131,6 +139,8 @@ class StreamingDisplay:
             except Exception as e:
                 _logger.error(f"Error in TTS speaker task: {e}")
 
+        _logger.debug("Streaming display about to complete")
+        
         _logger.debug("Streaming display completed")
 
 
@@ -170,7 +180,7 @@ class ColoredStreamingDisplay(StreamingDisplay):
     def __init__(
         self,
         batch_size: int = 4,
-        flush_delay: float = 0.1,
+        flush_delay: float = 1.0,
         color_start: str = "\033[94m",  # Blue
         color_end: str = "\033[0m",     # Reset
         prefix: str = "",
@@ -226,7 +236,7 @@ class ColoredStreamingDisplay(StreamingDisplay):
 async def stream_to_console(
     token_queue: asyncio.Queue,
     batch_size: int = 4,
-    flush_delay: float = 0.1
+    flush_delay: float = 1.0
 ) -> asyncio.Task:
     """Stream tokens to console with default settings."""
     return await create_streaming_task(
@@ -242,7 +252,7 @@ async def stream_colored_to_console(
     color_start: str = "\033[94m",  # Blue
     color_end: str = "\033[0m",     # Reset
     batch_size: int = 4,
-    flush_delay: float = 0.1
+    flush_delay: float = 1.0
 ) -> asyncio.Task:
     """Stream tokens to console with colored output."""
     display = ColoredStreamingDisplay(
@@ -263,7 +273,7 @@ async def stream_colored_to_console_with_tts(
         color_start: str = "\033[94m",  # Blue
         color_end: str = "\033[0m",  # Reset
         batch_size: int = 4,
-        flush_delay: float = 0.1
+        flush_delay: float = 1.0
 ) -> asyncio.Task:
     """Stream tokens to console with colored output."""
     display = ColoredStreamingDisplay(

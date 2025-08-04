@@ -82,7 +82,7 @@ class Config:
             "streaming": {
                 "enabled": True,                # Enable streaming output
                 "token_batch_size": 6,          # Number of tokens to batch before displaying
-                "flush_delay": 0.1              # Delay in seconds between token batch checks
+                "flush_delay": 1.0              # Delay in seconds between token batch checks
             },
             
             # Bot facts configuration
@@ -241,7 +241,7 @@ def create_example_config_file(path: str) -> None:
         "streaming": {
             "enabled": True,
             "token_batch_size": 6,
-            "flush_delay": 0.1
+            "flush_delay": 1.0
         },
         "facts": [
             "The name of this chatbot is 'Computer'",
