@@ -57,7 +57,7 @@ async def make_brave_search_request(query: str, count: int = 10) -> List[Dict[st
 @mcp.tool()
 async def web_search(query: str, count: int = 5) -> str:
     """
-    Search the web using Brave Search API
+    Search the web using Brave Search API. This is what the user will use to search the web.
     
     Args:
         query: Search query string

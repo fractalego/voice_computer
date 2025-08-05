@@ -22,6 +22,8 @@ def convert_numbers_to_words(text):
 
 def _clean_text(text):
     text = text.replace(".", " . ")
+    text = text.replace(",", " , ")
+    text = text.replace("*", " * ")
     text = text.replace(":", " : ")
     text = text.replace("-", " ")
     text = text.replace("°", " ")

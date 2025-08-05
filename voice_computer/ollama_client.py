@@ -100,6 +100,7 @@ class OllamaClient:
             },
             "stream": stream,
             "tools": tools_dict,
+            "think": False,
         }
 
         try:
@@ -116,6 +117,7 @@ class OllamaClient:
                 )
         except asyncio.exceptions.CancelledError:
             _logger.debug("Ollama streaming request was cancelled")
+            return ClientResponse(message="", tool_calls=None)
         except requests.exceptions.ConnectionError as e:
             error_msg = f"Connection refused to Ollama at {self.host}. Please ensure Ollama is running and accessible."
             _logger.error(error_msg)
@@ -194,7 +196,7 @@ class OllamaClient:
                     headers=headers,
                     data=json.dumps(data),
                     timeout=600,
-                    stream=True
+                    stream=True,
                 )
                 _logger.debug(f"Got response from Ollama, status: {response.status_code}")
                 
@@ -214,6 +216,8 @@ class OllamaClient:
                         
                         if "message" in chunk_data and "content" in chunk_data["message"]:
                             token = chunk_data["message"]["content"]
+                            if not token:
+                                continue
                             complete_message += token
                             token_count += 1
 

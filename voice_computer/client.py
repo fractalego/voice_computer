@@ -5,7 +5,6 @@ Main voice computer client that integrates all components.
 import asyncio
 import logging
 from typing import Optional, List, Dict, Any
-from collections import deque
 
 from .voice_interface import VoiceInterface
 from .data_types import Messages, Utterance
@@ -634,6 +633,10 @@ class VoiceComputerClient:
                     pass
                 except Exception as e:
                     _logger.debug(f"Task {task.get_name()} raised exception during cancellation: {e}")
+                    ## print stacktrace
+                    import traceback
+                    _logger.debug(traceback.format_exc())
+
             
             # Check if any task raised an exception
             from .streaming_display import StreamingCompletionException
