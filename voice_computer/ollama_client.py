@@ -49,14 +49,16 @@ class OllamaClient:
         temperature: float = 0.4,
         max_tokens: int = 2048,
         host: str = "http://localhost:11434",
+        keep_alive: int = -1,
     ):
         self.model = model
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.host = host
+        self.keep_alive = keep_alive
 
         # Log Ollama connection details
-        _logger.info(f"Initializing OllamaClient for model '{model}' on host '{host}'")
+        _logger.info(f"Initializing OllamaClient for model '{model}' on host '{host}' with keep_alive={keep_alive}")
 
     async def predict(
         self,
@@ -101,6 +103,7 @@ class OllamaClient:
             "stream": stream,
             "tools": tools_dict,
             "think": False,
+            "keep_alive": self.keep_alive,
         }
 
         try:
