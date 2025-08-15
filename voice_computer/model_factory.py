@@ -13,7 +13,7 @@ from transformers import (
     SpeechT5Processor, SpeechT5ForTextToSpeech, SpeechT5HifiGan,
     AutoModelForSequenceClassification, AutoTokenizer
 )
-from .ollama_client import OllamaClient
+from .client import OllamaClient
 
 _logger = logging.getLogger(__name__)
 

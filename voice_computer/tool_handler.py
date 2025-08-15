@@ -8,7 +8,7 @@ from typing import List, Dict, Any, Optional, NamedTuple, TYPE_CHECKING
 from .config import Config
 from .entailer import Entailer
 from .extractor import ArgumentExtractor
-from .ollama_client import OllamaClient
+from .client import OllamaClient
 from .mcp_connector import MCPTools
 
 if TYPE_CHECKING:

@@ -10,7 +10,8 @@ from io import StringIO
 from typing import Optional, List, AsyncGenerator, Callable
 from concurrent.futures import ThreadPoolExecutor
 
-from .data_types import Messages, Tool, ClientResponse, ToolCall
+from .base_client import BaseClient
+from ..data_types import Messages, Tool, ClientResponse, ToolCall
 
 _logger = logging.getLogger(__name__)
 
@@ -40,7 +41,7 @@ class OllamaResponseError(Exception):
         )
 
 
-class OllamaClient:
+class OllamaClient(BaseClient):
     """Client for Ollama API."""
 
     def __init__(
@@ -51,9 +52,7 @@ class OllamaClient:
         host: str = "http://localhost:11434",
         keep_alive: int = -1,
     ):
-        self.model = model
-        self.temperature = temperature
-        self.max_tokens = max_tokens
+        super().__init__(model, temperature, max_tokens)
         self.host = host
         self.keep_alive = keep_alive
 

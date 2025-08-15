@@ -7,7 +7,7 @@ Uses Ollama language models to determine which tools are relevant for a given qu
 import logging
 from typing import Optional, List, Dict, Any
 from .config import Config
-from .ollama_client import OllamaClient
+from .client import OllamaClient
 from .model_factory import get_model_factory
 from .data_types import Messages, Utterance
 

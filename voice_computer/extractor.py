@@ -6,7 +6,7 @@ import json
 import logging
 from typing import Dict, Any, Optional, List
 from .config import Config
-from .ollama_client import OllamaClient
+from .client import OllamaClient
 from .data_types import Messages, Utterance
 from .model_factory import get_model_factory
 from .prompt import get_argument_extraction_system_prompt, format_parameter_descriptions
