@@ -14,6 +14,7 @@ from transformers import (
     AutoModelForSequenceClassification, AutoTokenizer
 )
 from .client import OllamaClient
+from .client.hf_client import HFClient
 
 _logger = logging.getLogger(__name__)
 
@@ -26,6 +27,7 @@ class ModelFactory:
         self._tts_cache: Dict[str, Tuple[SpeechT5Processor, SpeechT5ForTextToSpeech, SpeechT5HifiGan, str]] = {}
         self._entailment_cache: Dict[str, Tuple[AutoModelForSequenceClassification, AutoTokenizer, str]] = {}
         self._ollama_cache: Dict[str, OllamaClient] = {}
+        self._hf_cache: Dict[str, HFClient] = {}
         
     def get_whisper_model(self, model_name: str, device: Optional[str] = None) -> Tuple[WhisperProcessor, WhisperForConditionalGeneration, str]:
         """
@@ -213,6 +215,66 @@ class ModelFactory:
             
         return self._ollama_cache[cache_key]
     
+    def get_hf_client(self, model: str, api_key: str, **kwargs) -> HFClient:
+        """
+        Get cached HuggingFace client or create if not cached.
+        
+        Args:
+            model: HuggingFace model name
+            api_key: HuggingFace API key
+            **kwargs: Additional HFClient parameters
+            
+        Returns:
+            HFClient instance
+        """
+        # Create cache key from all relevant parameters
+        cache_key = f"{model}:{api_key}:{hash(frozenset(kwargs.items()))}"
+        
+        if cache_key not in self._hf_cache:
+            _logger.info(f"Creating HuggingFace client for model: {model}")
+            
+            client = HFClient(
+                model=model,
+                api_key=api_key,
+                **kwargs
+            )
+            
+            self._hf_cache[cache_key] = client
+            _logger.info(f"HuggingFace client for {model} cached successfully")
+        else:
+            _logger.debug(f"Using cached HuggingFace client for model: {model}")
+            
+        return self._hf_cache[cache_key]
+    
+    def get_llm_client(self, config_dict: Dict[str, Any]):
+        """
+        Get the appropriate LLM client based on configuration.
+        
+        Args:
+            config_dict: Configuration dictionary containing client type and settings
+            
+        Returns:
+            OllamaClient or HFClient instance
+        """
+        client_type = config_dict.get("llm_client_type", "ollama")
+        
+        if client_type == "ollama":
+            model = config_dict.get("ollama_model", "qwen2.5:32b")
+            host = config_dict.get("ollama_host", "http://localhost:11434")
+            return self.get_ollama_client(model=model, host=host)
+        
+        elif client_type == "huggingface":
+            model = config_dict.get("huggingface_model", "Qwen/Qwen2.5-32B")
+            api_key = config_dict.get("huggingface_api_key")
+            
+            if not api_key:
+                raise ValueError("HuggingFace API key is required when using huggingface client type")
+            
+            return self.get_hf_client(model=model, api_key=api_key)
+        
+        else:
+            raise ValueError(f"Unknown LLM client type: {client_type}. Must be 'ollama' or 'huggingface'")
+    
     def _get_best_device(self) -> str:
         """Auto-detect the best available device."""
         if torch.cuda.is_available():
@@ -227,7 +289,7 @@ class ModelFactory:
         Clear cached models.
         
         Args:
-            model_type: Type of models to clear ('whisper', 'tts', 'entailment', 'ollama', or None for all)
+            model_type: Type of models to clear ('whisper', 'tts', 'entailment', 'ollama', 'hf', or None for all)
         """
         if model_type is None or model_type == "whisper":
             self._whisper_cache.clear()
@@ -244,6 +306,10 @@ class ModelFactory:
         if model_type is None or model_type == "ollama":
             self._ollama_cache.clear()
             _logger.info("Cleared Ollama client cache")
+            
+        if model_type is None or model_type == "hf":
+            self._hf_cache.clear()
+            _logger.info("Cleared HuggingFace client cache")
     
     def get_cache_info(self) -> Dict[str, int]:
         """Get information about cached models."""
@@ -251,7 +317,8 @@ class ModelFactory:
             "whisper_models": len(self._whisper_cache),
             "tts_models": len(self._tts_cache),
             "entailment_models": len(self._entailment_cache),
-            "ollama_clients": len(self._ollama_cache)
+            "ollama_clients": len(self._ollama_cache),
+            "hf_clients": len(self._hf_cache)
         }
 
 

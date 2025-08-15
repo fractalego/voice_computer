@@ -35,9 +35,16 @@ class Config:
             "entailer_model": None,                 # Use ollama_model if None  
             "entailer_conversation_history_length": 3,  # Number of recent utterances to include for entailment context
             
+            # LLM client configuration
+            "llm_client_type": "ollama",            # "ollama" or "huggingface"
+            
             # Ollama settings
             "ollama_host": "http://localhost:11434",
             "ollama_model": "qwen2.5:32b",          # or any model you have in Ollama
+            
+            # HuggingFace settings  
+            "huggingface_model": "Qwen/Qwen2.5-32B",  # Default HF model
+            "huggingface_api_key": None,            # Required for HF API
             
             # Extractor LLM settings (for argument extraction from queries)
             "extractor_host": None,                 # Use ollama_host if None
@@ -221,8 +228,11 @@ def create_example_config_file(path: str) -> None:
         "entailer_host": None,
         "entailer_model": None,
         "entailer_conversation_history_length": 3,
+        "llm_client_type": "ollama",
         "ollama_host": "http://localhost:11434",
         "ollama_model": "qwen2.5:32b",
+        "huggingface_model": "Qwen/Qwen2.5-32B",
+        "huggingface_api_key": None,
         "extractor_host": None,
         "extractor_model": None,
         "extractor_conversation_history_length": 2,
