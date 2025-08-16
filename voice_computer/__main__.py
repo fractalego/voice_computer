@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any
 
 from voice_computer.conversation_handler import ConversationHandler
-from voice_computer.listeners import ServerVoiceListener
+from voice_computer.listeners import WebSocketListener
 from voice_computer.server_tts_speaker import ServerTTSSpeaker
 from voice_computer.config import load_config, create_example_config_file
 
@@ -227,7 +227,7 @@ async def run_websocket_server(host: str, port: int, config_path: Optional[str] 
         connected_clients.add(websocket)
         
         # Create client-specific voice listener (shares models with shared_voice_listener)
-        voice_listener = ServerVoiceListener(config)
+        voice_listener = WebSocketListener(config)
         
         # Create WebSocket callback for TTS
         async def websocket_send_callback(message_data):
@@ -259,7 +259,7 @@ async def run_websocket_server(host: str, port: int, config_path: Optional[str] 
             }))
             
             # Test TTS by sending a connection sound
-            connection_message = "Voice computer connected and ready"
+            connection_message = "Initializing. Please wait."
             logger.info(f"Sending connection test TTS: {connection_message}")
             
             # Send the text response first
@@ -332,9 +332,12 @@ async def run_websocket_server(host: str, port: int, config_path: Optional[str] 
         if audio_data:
             try:
                 decoded_audio = base64.b64decode(audio_data)
+                logger.debug(f"Decoded audio chunk: {len(decoded_audio)} bytes")
                 await handler.add_audio_chunk(decoded_audio)
             except Exception as e:
                 logger.error(f"Error decoding audio data: {e}")
+        else:
+            logger.debug("Received audio_chunk message but no audio_data field")
     
     async def send_status(websocket, handler, client_count):
         """Send server status information."""

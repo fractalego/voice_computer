@@ -110,7 +110,15 @@ class BaseListener(ABC):
         """Calculate RMS of audio data."""
         if len(data) == 0:
             return 0.0
-        return calculate_rms(data, self.range)
+        
+        # Convert bytes to numpy array if needed
+        if isinstance(data, bytes):
+            audio_array = np.frombuffer(data, dtype=np.int16)
+            audio_float = audio_array.astype(np.float32) / self.range
+        else:
+            audio_float = data
+            
+        return calculate_rms(audio_float)
     
     async def detect_activation_words(self, text: str) -> Optional[str]:
         """
@@ -193,10 +201,14 @@ class BaseListener(ABC):
                 return_tensors="pt"
             )
             
-            # Move inputs to device
+            # Move inputs to device and match model dtype
             input_features = inputs.input_features.to(self.device)
-            if hasattr(self.model, 'half') and self.device.type == 'cuda':
-                input_features = input_features.half()
+            
+            # Ensure input dtype matches model dtype
+            if self.device.type == 'cuda':
+                # Get the model's dtype from its parameters
+                model_dtype = next(self.model.parameters()).dtype
+                input_features = input_features.to(dtype=model_dtype)
                 
             # Generate transcription
             with torch.no_grad():
@@ -254,3 +266,26 @@ class BaseListener(ABC):
     async def throw_exception_on_voice_activity(self):
         """Monitor for voice activity and throw exception when detected."""
         pass
+    
+    async def input(self) -> str:
+        """
+        Listen for audio input and return transcribed text.
+        Common implementation that uses listen_for_audio() and transcribe_audio().
+        
+        Returns:
+            Transcribed text or empty string if no speech detected
+        """
+        try:
+            # Listen for audio with voice activity detection
+            audio_data, voice_detected = await self.listen_for_audio()
+            
+            if not voice_detected or audio_data is None:
+                return ""
+            
+            # Transcribe the audio
+            text = await self.transcribe_audio(audio_data)
+            return text if text else ""
+            
+        except Exception as e:
+            _logger.error(f"Error in {self.__class__.__name__}.input(): {e}")
+            return ""

@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from voice_computer.listeners import WhisperListener
+from voice_computer.listeners import MicrophoneListener
 from voice_computer.speaker import SoundFileSpeaker, TTSSpeaker
 
 _logger = logging.getLogger(__name__)
@@ -26,7 +26,7 @@ class VoiceInterface:
         self._bot_has_spoken = False
         
         # Use provided components or create default ones
-        self._listener = voice_listener if voice_listener is not None else WhisperListener(config)
+        self._listener = voice_listener if voice_listener is not None else MicrophoneListener(config)
         self._tts_speaker = tts_speaker if tts_speaker is not None else TTSSpeaker(config=config)
         
         # Audio feedback settings

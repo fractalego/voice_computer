@@ -26,7 +26,8 @@ def calculate_rms(audio_data: np.ndarray) -> float:
     if len(audio_data) == 0:
         return 0.0
 
-    rms = np.mean(np.sqrt(audio_data.astype(np.float64) ** 2)) / audio_data.shape[0]
+    # Correct RMS calculation: sqrt(mean(x^2))
+    rms = np.sqrt(np.mean(audio_data.astype(np.float64) ** 2))
 
     # Handle NaN or infinite values
     if not np.isfinite(rms):

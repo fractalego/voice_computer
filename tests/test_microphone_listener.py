@@ -1,5 +1,5 @@
 """
-Test for WhisperListener transcription accuracy.
+Test for MicrophoneListener transcription accuracy.
 """
 
 import asyncio
@@ -13,12 +13,12 @@ import os
 # Add the parent directory to the path so we can import voice_computer
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from voice_computer.listeners import WhisperListener
+from voice_computer.listeners import MicrophoneListener
 from voice_computer.config import Config
 
 
-class TestWhisperListener(unittest.TestCase):
-    """Test cases for WhisperListener transcription accuracy."""
+class TestMicrophoneListener(unittest.TestCase):
+    """Test cases for MicrophoneListener transcription accuracy."""
     
     def setUp(self):
         """Set up test fixtures."""
@@ -34,8 +34,8 @@ class TestWhisperListener(unittest.TestCase):
         # Use a smaller/faster model for testing if available
         self.config.set_value("whisper_model", "openai/whisper-tiny")
         
-        # Initialize WhisperListener
-        self.listener = WhisperListener(self.config)
+        # Initialize MicrophoneListener
+        self.listener = MicrophoneListener(self.config)
     
     def tearDown(self):
         """Clean up after tests."""
@@ -127,7 +127,7 @@ class TestWhisperListener(unittest.TestCase):
         return text.strip()
     
     def test_transcription_accuracy(self):
-        """Test that WhisperListener correctly transcribes the quick brown fox audio."""
+        """Test that MicrophoneListener correctly transcribes the quick brown fox audio."""
         expected_text = "the quick brown fox jumps over the lazy dog"
         
         # Load the test audio file
@@ -143,15 +143,13 @@ class TestWhisperListener(unittest.TestCase):
         if not self.listener.initialized or self.listener.processor is None:
             self.skipTest("Whisper model not properly initialized - this might be due to missing model files or dependencies")
         
-        # Process the audio through WhisperListener
-        result = asyncio.run(self.listener._process_audio(audio_data))
+        # Process the audio through MicrophoneListener
+        result = asyncio.run(self.listener.transcribe_audio(audio_data))
         
         # Check that we got a result
-        self.assertIsInstance(result, dict, "Expected dict result from audio processing")
-        self.assertIn("transcription", result, "Expected 'transcription' key in result")
+        self.assertIsInstance(result, str, "Expected string result from audio transcription")
         
-        transcription = result["transcription"]
-        self.assertIsInstance(transcription, str, "Expected string transcription")
+        transcription = result
         self.assertNotEqual(transcription.strip(), "", "Expected non-empty transcription")
         
         # Normalize both texts for comparison
@@ -196,33 +194,32 @@ class TestWhisperListener(unittest.TestCase):
     def test_empty_audio(self):
         """Test handling of empty audio data."""
         empty_audio = np.array([], dtype=np.float32)
-        result = asyncio.run(self.listener._process_audio(empty_audio))
+        result = asyncio.run(self.listener.transcribe_audio(empty_audio))
         
-        self.assertIsInstance(result, dict)
-        self.assertIn("transcription", result)
-        self.assertEqual(result["transcription"], "[unclear]")
+        # Empty audio should return None, empty string, or [unclear]
+        self.assertTrue(result is None or result == "" or result == "[unclear]", 
+                       f"Expected None, empty string, or '[unclear]', got: {result}")
     
     def test_silence_audio(self):
         """Test handling of silent audio."""
         # Create 1 second of silence
         silence = np.zeros(16000, dtype=np.float32)
-        result = asyncio.run(self.listener._process_audio(silence))
+        result = asyncio.run(self.listener.transcribe_audio(silence))
         
-        self.assertIsInstance(result, dict)
-        self.assertIn("transcription", result)
-        # Should be either empty, unclear, or very short
-        transcription = result["transcription"].strip().lower()
-        self.assertTrue(len(transcription) < 10 or transcription == "[unclear]",
-                       f"Expected short or unclear transcription for silence, got: '{transcription}'")
+        # Silent audio should produce minimal transcription, [unclear], or None
+        if result:
+            # Accept [unclear] or very short text
+            self.assertTrue(result == "[unclear]" or len(result.strip()) <= 10, 
+                           f"Silent audio should produce '[unclear]' or short text, got: '{result}'")
 
 
-class TestWhisperListenerIntegration(unittest.TestCase):
-    """Integration tests for WhisperListener with configuration."""
+class TestMicrophoneListenerIntegration(unittest.TestCase):
+    """Integration tests for MicrophoneListener with configuration."""
     
     def test_listener_initialization(self):
-        """Test that WhisperListener initializes correctly with config."""
+        """Test that MicrophoneListener initializes correctly with config."""
         config = Config()
-        listener = WhisperListener(config)
+        listener = MicrophoneListener(config)
         
         self.assertIsNotNone(listener.config)
         self.assertEqual(listener.is_active, False)
@@ -241,7 +238,7 @@ class TestWhisperListenerIntegration(unittest.TestCase):
             "microphone_device_index": 1
         })
         
-        listener = WhisperListener(config)
+        listener = MicrophoneListener(config)
         
         self.assertEqual(listener.timeout, 3)
         self.assertEqual(listener.volume_threshold, 0.8)

@@ -1,5 +1,5 @@
 """
-Whisper-based speech recognition using local microphone input.
+Microphone-based speech recognition using local microphone input with Whisper.
 """
 
 import asyncio
@@ -14,8 +14,8 @@ from .base_listener import BaseListener
 _logger = logging.getLogger(__name__)
 
 
-class WhisperListener(BaseListener):
-    """Whisper listener using local microphone input with PyAudio."""
+class MicrophoneListener(BaseListener):
+    """Microphone listener using local microphone input with PyAudio and Whisper."""
     
     def __init__(self, config=None):
         super().__init__(config)
@@ -33,7 +33,7 @@ class WhisperListener(BaseListener):
         self.p = pyaudio.PyAudio()
         self.stream = None
         
-        _logger.info(f"WhisperListener initialized with PyAudio")
+        _logger.info(f"MicrophoneListener initialized with PyAudio")
         
         # Debug: List available audio devices in debug mode
         self._log_available_audio_devices()
@@ -80,7 +80,7 @@ class WhisperListener(BaseListener):
                     input_device_index=self.device_index,
                 )
                 self.is_active = True
-                _logger.debug(f"WhisperListener audio stream activated - format: {self.format}, channels: {self.channels}, rate: {self.rate}, chunk: {self.chunk}")
+                _logger.debug(f"MicrophoneListener audio stream activated - format: {self.format}, channels: {self.channels}, rate: {self.rate}, chunk: {self.chunk}")
                 
                 # Test read a small chunk
                 try:
@@ -102,7 +102,7 @@ class WhisperListener(BaseListener):
                     self.stream.close()
                     self.stream = None
                 self.is_active = False
-                _logger.debug("WhisperListener audio stream deactivated")
+                _logger.debug("MicrophoneListener audio stream deactivated")
             except Exception as e:
                 _logger.error(f"Error deactivating audio stream: {e}")
     
@@ -185,27 +185,6 @@ class WhisperListener(BaseListener):
             # Re-raise the exception to signal voice activity
             raise e
     
-    async def input(self) -> str:
-        """
-        Listen for audio input and return transcribed text.
-        
-        Returns:
-            Transcribed text or empty string if no speech detected
-        """
-        try:
-            # Listen for audio with voice activity detection
-            audio_data, voice_detected = await self.listen_for_audio()
-            
-            if not voice_detected or audio_data is None:
-                return ""
-            
-            # Transcribe the audio
-            text = await self.transcribe_audio(audio_data)
-            return text if text else ""
-            
-        except Exception as e:
-            _logger.error(f"Error in WhisperListener.input(): {e}")
-            return ""
     
     def __del__(self):
         """Cleanup on deletion."""
