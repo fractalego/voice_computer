@@ -6,7 +6,7 @@ speech recognition, text-to-speech, and MCP (Model Context Protocol) tools
 with Ollama for intelligent responses.
 """
 
-from .handler import Handler
+from .local_handler import Handler
 from .voice_interface import VoiceInterface
 from .whisper_listener import WhisperListener
 from .client import OllamaClient, HFClient

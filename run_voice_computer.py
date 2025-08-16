@@ -13,7 +13,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from voice_computer import Handler
+from voice_computer.local_handler import Handler
 from voice_computer.config import load_config, create_example_config_file
 
 

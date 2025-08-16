@@ -17,10 +17,9 @@ from typing import Optional, Dict, Any
 import base64
 from pathlib import Path
 
-from voice_computer import Handler
+from voice_computer.server_handler import ServerHandler
 from voice_computer.config import load_config
 from voice_computer.data_types import Utterance
-from voice_computer.whisper_listener import WhisperListener
 
 _logger = logging.getLogger(__name__)
 
@@ -32,24 +31,16 @@ class VoiceComputerServer:
         self.host = host
         self.port = port
         self.config = load_config(config_path)
-        self.handler = Handler(self.config)
+        self.handler = ServerHandler(self.config)
         self.connected_clients = set()
         self.server = None
-        
-        # Initialize Whisper listener for transcription
-        self.whisper_listener = WhisperListener(self.config)
         
     async def start(self):
         """Start the WebSocket server."""
         _logger.info(f"Starting Voice Computer Server on {self.host}:{self.port}")
         
-        # Initialize MCP tools
-        await self.handler._setup_mcp_tools()
-        self.handler._initialize_models()
-        
-        # Initialize Whisper listener
-        _logger.info("Initializing Whisper listener...")
-        self.whisper_listener.initialize()
+        # Initialize MCP tools and models
+        await self.handler.setup_mcp_tools()
         
         # Start WebSocket server
         self.server = await websockets.serve(
@@ -69,7 +60,7 @@ class VoiceComputerServer:
             await self.server.wait_closed()
             
         # Cleanup handler
-        await self.handler._cleanup_mcp_connections()
+        await self.handler.cleanup_mcp_connections()
         _logger.info("Voice Computer Server stopped")
         
     async def handle_client(self, websocket):
@@ -85,8 +76,8 @@ class VoiceComputerServer:
                 "type": "welcome",
                 "message": "Connected to Voice Computer Server",
                 "server_config": {
-                    "streaming_enabled": self.handler._is_streaming_enabled(),
-                    "available_tools": self.handler.tool_handler.get_available_tool_names() if self.handler.tool_handler else []
+                    "streaming_enabled": True,
+                    "available_tools": self.handler.get_available_tool_names()
                 }
             })
             
@@ -173,22 +164,23 @@ class VoiceComputerServer:
             
     async def handle_audio_chunk(self, websocket, data: Dict[str, Any]):
         """Handle real-time audio chunk from client."""
-        if not hasattr(websocket, 'audio_buffer'):
-            websocket.audio_buffer = []
-            websocket.is_listening = True  # Always listening by default
+        if not hasattr(websocket, 'last_audio_time'):
             websocket.last_audio_time = time.time()
+            websocket.chunk_count = 0
             
-        # Store audio chunk
+        # Store audio chunk in handler
         audio_data = data.get("audio_data", "")
         if audio_data:
             try:
                 decoded_audio = base64.b64decode(audio_data)
-                websocket.audio_buffer.append(decoded_audio)
+                await self.handler.add_audio_chunk(decoded_audio)
                 websocket.last_audio_time = time.time()
+                websocket.chunk_count += 1
                 
-                # Process audio buffer periodically
-                if len(websocket.audio_buffer) >= 50:  # About 3 seconds of audio at 16kHz
-                    asyncio.create_task(self._process_audio_buffer(websocket))
+                # Process audio buffer periodically (every ~3 seconds worth of chunks)
+                if websocket.chunk_count >= 50:  # About 3 seconds of audio at 16kHz
+                    websocket.chunk_count = 0
+                    asyncio.create_task(self._process_accumulated_audio(websocket))
                     
             except Exception as e:
                 _logger.error(f"Error decoding audio data: {e}")
@@ -219,93 +211,56 @@ class VoiceComputerServer:
             "message": "Server stopped listening"
         })
         
-    async def _process_audio_buffer(self, websocket):
-        """Process accumulated audio buffer for activation words and commands."""
-        if not hasattr(websocket, 'audio_buffer') or len(websocket.audio_buffer) == 0:
-            return
-            
-        # Get current audio buffer
-        audio_data = b''.join(websocket.audio_buffer)
-        websocket.audio_buffer.clear()
-        
-        # Transcribe the audio
+    async def _process_accumulated_audio(self, websocket):
+        """Process accumulated audio for activation words and commands."""
         try:
-            transcribed_text = await self._transcribe_audio(audio_data)
+            result = await self.handler.process_accumulated_audio()
             
-            if transcribed_text and transcribed_text.strip():
-                text_lower = transcribed_text.lower().strip()
-                _logger.info(f"Transcribed: {text_lower}")
+            if not result:
+                return
                 
-                # Check for activation words
-                activation_words = ['computer', 'hey computer']
-                for activation_word in activation_words:
-                    if activation_word in text_lower:
-                        _logger.info(f"Activation word '{activation_word}' detected")
-                        
-                        # Send notification to client
-                        await self.send_message(websocket, {
-                            "type": "activation_detected",
-                            "activation_word": activation_word,
-                            "full_text": transcribed_text
-                        })
-                        
-                        # Extract command after activation word
-                        parts = text_lower.split(activation_word, 1)
-                        if len(parts) > 1 and parts[1].strip():
-                            command = parts[1].strip()
-                            _logger.info(f"Processing command: {command}")
-                            
-                            # Process as text query
-                            await self.handle_text_query(websocket, {
-                                "query": command
-                            })
-                        else:
-                            # Just activation word, ask what to do
-                            await self.send_message(websocket, {
-                                "type": "query_response",
-                                "query": "activation",
-                                "response": "How can I help you?"
-                            })
-                        return
-                
-                # If no activation word found, just log the transcription
+            result_type = result.get("type")
+            
+            if result_type == "activation_detected":
+                # Send activation notification
                 await self.send_message(websocket, {
-                    "type": "audio_processed",
-                    "transcribed_text": transcribed_text
+                    "type": "activation_detected",
+                    "activation_word": result.get("activation_word"),
+                    "full_text": result.get("full_text")
                 })
                 
-        except Exception as e:
-            _logger.error(f"Error processing audio buffer: {e}")
-    
-    async def _process_audio_after_delay(self, websocket, delay: float = 3.0):
-        """Legacy method - now using continuous processing."""
-        pass
+                # If there's a response, send it
+                if "response" in result:
+                    await self.send_message(websocket, {
+                        "type": "query_response",
+                        "query": result.get("command", ""),
+                        "response": result["response"]
+                    })
+                elif result.get("command"):
+                    # Command detected but not processed yet
+                    await self.handle_text_query(websocket, {
+                        "query": result["command"]
+                    })
+                else:
+                    # Just activation word
+                    await self.send_message(websocket, {
+                        "type": "query_response",
+                        "query": "activation",
+                        "response": "How can I help you?"
+                    })
+                    
+            elif result_type == "transcription_only":
+                # No activation word, just transcription
+                await self.send_message(websocket, {
+                    "type": "audio_processed",
+                    "transcribed_text": result.get("text", "")
+                })
                 
-    async def _transcribe_audio(self, audio_data: bytes) -> str:
-        """Transcribe audio data using the voice computer's WhisperListener."""
-        try:
-            # Convert bytes to numpy array (same format as WhisperListener expects)
-            import numpy as np
-            
-            # Convert bytes to int16 array
-            audio_array = np.frombuffer(audio_data, dtype=np.int16)
-            
-            # Convert to float32 and normalize to [-1, 1] range
-            audio_float = audio_array.astype(np.float32) / 32768.0
-            
-            # Use the whisper listener to transcribe
-            text = await self.whisper_listener._transcribe_audio(audio_float)
-            
-            if text:
-                _logger.debug(f"Transcribed: '{text}'")
-                return text.strip()
-            else:
-                _logger.debug("No transcription result")
-                return ""
+            elif result_type == "error":
+                _logger.error(f"Audio processing error: {result.get('error')}")
                 
         except Exception as e:
-            _logger.error(f"Error transcribing audio with WhisperListener: {e}")
-            return ""
+            _logger.error(f"Error processing accumulated audio: {e}")
         
     async def handle_reset_conversation(self, websocket):
         """Reset the conversation state."""
@@ -319,12 +274,13 @@ class VoiceComputerServer:
         """Get server status information."""
         status = {
             "type": "status",
-            "conversation_length": len(self.handler.conversation_history),
+            "conversation_length": self.handler.get_conversation_length(),
             "tool_results_count": len(self.handler.tool_results_queue),
             "failed_tools_count": len(self.handler.failed_tools_queue),
-            "available_tools": self.handler.tool_handler.get_available_tool_names() if self.handler.tool_handler else [],
-            "streaming_enabled": self.handler._is_streaming_enabled(),
-            "connected_clients": len(self.connected_clients)
+            "available_tools": self.handler.get_available_tool_names(),
+            "streaming_enabled": True,
+            "connected_clients": len(self.connected_clients),
+            "audio_buffer_duration": self.handler.get_buffer_duration()
         }
         await self.send_message(websocket, status)
         
