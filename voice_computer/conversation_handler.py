@@ -196,6 +196,8 @@ class ConversationHandler:
         Returns:
             The response to the query
         """
+        _logger.info(f"Processing query in {'server' if self.server_mode else 'local'} mode: '{query}' (streaming={use_streaming}, tts={use_tts})")
+        
         # Add user query to conversation history
         self.conversation_history.append(Utterance(role="user", content=query))
         
@@ -620,7 +622,10 @@ class ConversationHandler:
                     await self.voice_interface.throw_exception_on_voice_activity()
                 except Exception as e:
                     # Cancel other tasks immediately when voice interruption occurs
-                    _logger.info("Voice activity detected, cancelling prediction and display tasks")
+                    _logger.info(f"Voice activity detected in {'server' if self.server_mode else 'local'} mode, cancelling prediction and display tasks")
+                    _logger.debug(f"Voice activity details: {e}")
+                    _logger.debug(f"Prediction task status: {prediction_task.done() if prediction_task else 'None'}")
+                    _logger.debug(f"Display task status: {display_task.done() if display_task else 'None'}")
                     prediction_task.cancel()
                     display_task.cancel()
                     # Cancel TTS playback if active
@@ -628,12 +633,20 @@ class ConversationHandler:
                         self.tts_speaker.cancel_playback()
                     raise e
             
-            listening_task = asyncio.create_task(listening_with_cancellation())
+            # Only create listening task in local mode - server mode handles interruption differently
+            if not self.server_mode:
+                listening_task = asyncio.create_task(listening_with_cancellation())
+                task_list = [prediction_task, display_task, listening_task]
+                _logger.debug("Created voice activity monitoring task for local mode")
+            else:
+                # In server mode, don't monitor for voice activity during response generation
+                task_list = [prediction_task, display_task]
+                _logger.debug("Server mode: skipping voice activity monitoring during response generation")
             
             # Wait for the first exception (voice interruption) or all tasks to complete
             done, pending = await asyncio.wait(
-                [listening_task, prediction_task, display_task],
-                return_when=asyncio.FIRST_EXCEPTION
+                task_list,
+                return_when=asyncio.FIRST_EXCEPTION if not self.server_mode else asyncio.ALL_COMPLETED
             )
             ## logs the status of the tasks
             _logger.debug(f"Tasks done: {[task.get_name() for task in done]}")
