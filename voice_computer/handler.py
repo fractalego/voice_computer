@@ -67,8 +67,8 @@ class SimpleConfig:
         self._config[key] = value
 
 
-class VoiceComputerClient:
-    """Main voice computer client that coordinates all components."""
+class Handler:
+    """Main voice computer handler that coordinates all components."""
     
     def __init__(self, config: Optional[Config] = None):
         self.config = config or Config()
@@ -116,7 +116,7 @@ class VoiceComputerClient:
 
         self._initialize_models()
 
-        _logger.info("VoiceComputerClient initialized")
+        _logger.info("Handler initialized")
     
     def _reset_conversation_state(self):
         """Reset conversation history and tool results when conversation ends."""
@@ -690,10 +690,6 @@ class VoiceComputerClient:
         else:
             _logger.warning("TTSSpeaker is not initialized, TTS functionality will be disabled.")
 
-
-
-
-
     async def run_constant_listening_mode(self):
         """
         Run in constant listening mode where:
@@ -914,15 +910,15 @@ class VoiceComputerClient:
 
 async def main():
     """Example usage."""
-    # Create client
-    client = VoiceComputerClient()
+    # Create handler
+    handler = Handler()
     
     # Example: Add MCP servers (configure based on your setup)
-    # client.add_mcp_server("filesystem", "mcp-server-filesystem", ["--root", "/tmp"])
-    # client.add_mcp_server("web-search", "mcp-server-brave-search", ["--api-key", "your-key"])
+    # handler.add_mcp_server("filesystem", "mcp-server-filesystem", ["--root", "/tmp"])
+    # handler.add_mcp_server("web-search", "mcp-server-brave-search", ["--api-key", "your-key"])
     
     # Run the voice loop
-    await client.run_voice_loop()
+    await handler.run_voice_loop()
 
 
 if __name__ == "__main__":

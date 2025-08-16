@@ -13,7 +13,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from . import VoiceComputerClient
+from . import Handler
 from .config import load_config, create_example_config_file
 
 
@@ -193,22 +193,22 @@ async def main():
         config = load_config(args.config)
         logger.info(f"Configuration loaded from: {args.config or 'default'}")
         
-        # Create client
-        client = VoiceComputerClient(config)
+        # Create handler
+        handler = Handler(config)
         
         # Add example MCP servers if none configured
         mcp_servers = config.get_value("mcp_servers") or []
         if not mcp_servers:
             logger.info("No MCP servers configured. Add some to enable tool functionality.")
-            logger.info("Example: client.add_mcp_server('filesystem', 'mcp-server-filesystem', ['--root', '/tmp'])")
+            logger.info("Example: handler.add_mcp_server('filesystem', 'mcp-server-filesystem', ['--root', '/tmp'])")
         
         # Run appropriate mode
         if args.test:
             logger.info("Running in text-only mode")
-            await client.run_text_loop()
+            await handler.run_text_loop()
         else:
             logger.info("Running in voice mode")
-            await client.run_voice_loop()
+            await handler.run_voice_loop()
             
         return 0
         

@@ -4,9 +4,6 @@ Simplified voice interface for input and output.
 
 import asyncio
 import logging
-import subprocess
-import tempfile
-import os
 from pathlib import Path
 from typing import Optional
 
