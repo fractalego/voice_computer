@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from voice_computer.whisper_listener import WhisperListener
+from voice_computer.listeners import WhisperListener
 from voice_computer.speaker import SoundFileSpeaker, TTSSpeaker
 
 _logger = logging.getLogger(__name__)
@@ -20,12 +20,14 @@ COLOR_GREEN = "\033[92m"   # Green
 class VoiceInterface:
     """Simplified voice interface for speech input and output."""
     
-    def __init__(self, config=None):
+    def __init__(self, config=None, voice_listener=None, tts_speaker=None):
         self.config = config
         self._is_listening = False
         self._bot_has_spoken = False
-        self._listener = WhisperListener(config)
-        self._tts_speaker = TTSSpeaker(config=config)
+        
+        # Use provided components or create default ones
+        self._listener = voice_listener if voice_listener is not None else WhisperListener(config)
+        self._tts_speaker = tts_speaker if tts_speaker is not None else TTSSpeaker(config=config)
         
         # Audio feedback settings
         self._waking_up_sound = True
@@ -382,7 +384,7 @@ class VoiceInterface:
         return text.strip()
 
     def initialize(self):
-        self._listener.initialize_whisper()
+        self._listener.initialize()
 
     async def throw_exception_on_intelligible_speech(self):
         await self._listener.input()

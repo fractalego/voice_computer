@@ -7,7 +7,7 @@ import logging
 from typing import Optional, List, Dict, Any
 
 from voice_computer.voice_interface import VoiceInterface
-from voice_computer.server_voice_listener import ServerVoiceListener
+from voice_computer.listeners import ServerVoiceListener
 from voice_computer.data_types import Messages, Utterance
 from voice_computer.tool_handler import ToolHandler
 from voice_computer.mcp_connector import MCPStdioConnector
@@ -87,7 +87,7 @@ class ConversationHandler:
             # Server mode - use provided listener and speaker
             self.voice_listener = voice_listener
             self.tts_speaker = tts_speaker
-            self.voice_interface = None  # Not used in server mode
+            self.voice_interface = VoiceInterface(self.config, voice_listener=voice_listener, tts_speaker=tts_speaker)
             self.server_mode = True
         else:
             # Local mode - use traditional voice interface

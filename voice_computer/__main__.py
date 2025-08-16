@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any
 
 from voice_computer.conversation_handler import ConversationHandler
-from voice_computer.server_voice_listener import ServerVoiceListener
+from voice_computer.listeners import ServerVoiceListener
 from voice_computer.server_tts_speaker import ServerTTSSpeaker
 from voice_computer.config import load_config, create_example_config_file
 

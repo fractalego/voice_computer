@@ -13,7 +13,7 @@ import os
 # Add the parent directory to the path so we can import voice_computer
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from voice_computer.whisper_listener import WhisperListener
+from voice_computer.listeners import WhisperListener
 from voice_computer.config import Config
 
 
@@ -135,7 +135,7 @@ class TestWhisperListener(unittest.TestCase):
         
         # Initialize Whisper model before processing
         try:
-            self.listener._initialize_whisper()
+            self.listener.initialize()
         except Exception as e:
             self.skipTest(f"Could not initialize Whisper model: {e}")
         

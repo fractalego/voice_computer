@@ -8,7 +8,7 @@ with Ollama for intelligent responses.
 
 from voice_computer.conversation_handler import ConversationHandler
 from voice_computer.voice_interface import VoiceInterface
-from voice_computer.whisper_listener import WhisperListener
+from voice_computer.listeners import WhisperListener
 from voice_computer.client import OllamaClient, HFClient
 from voice_computer.mcp_connector import MCPTools, MCPStdioConnector
 from voice_computer.data_types import Messages, Utterance, ClientResponse, ToolCall
