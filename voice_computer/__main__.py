@@ -101,6 +101,14 @@ def setup_logging(level=logging.INFO, log_file="voice_computer.log"):
         root_logger.addHandler(file_handler)
     except Exception as e:
         print(f"Warning: Could not setup file logging: {e}")
+    
+    # Suppress verbose websockets debug logging
+    websockets_logger = logging.getLogger('websockets')
+    websockets_logger.setLevel(logging.WARNING)
+    
+    # Also suppress other potentially verbose loggers
+    logging.getLogger('websockets.server').setLevel(logging.WARNING)
+    logging.getLogger('websockets.protocol').setLevel(logging.WARNING)
 
 
 def parse_args():
@@ -188,6 +196,25 @@ async def run_websocket_server(host: str, port: int, config_path: Optional[str] 
     logger = logging.getLogger(__name__)
     logger.info(f"Starting Voice Computer Server on {host}:{port}")
     
+    # Pre-load models and MCP tools before accepting clients
+    logger.info("Pre-loading models and MCP tools...")
+    
+    # Create a temporary handler to initialize shared resources
+    temp_handler = ConversationHandler(config)
+    
+    # Setup MCP tools
+    logger.info("Setting up MCP tools...")
+    await temp_handler._setup_mcp_tools()
+    
+    logger.info("Initializing models...")
+    temp_handler._initialize_models()
+    
+    # Get the shared MCP tools
+    shared_mcp_tools = temp_handler.mcp_tools
+    shared_tool_handler = temp_handler.tool_handler
+    
+    logger.info("Server initialization complete - ready to accept clients")
+    
     # Track connected clients
     connected_clients = set()
     server = None
@@ -199,7 +226,7 @@ async def run_websocket_server(host: str, port: int, config_path: Optional[str] 
         
         connected_clients.add(websocket)
         
-        # Create server components for this client
+        # Create client-specific voice listener (shares models with shared_voice_listener)
         voice_listener = ServerVoiceListener(config)
         
         # Create WebSocket callback for TTS
@@ -211,12 +238,14 @@ async def run_websocket_server(host: str, port: int, config_path: Optional[str] 
         
         tts_speaker = ServerTTSSpeaker(websocket_send_callback, config=config)
         
-        # Create handler with server components
+        # Create handler with server components using shared resources
         handler = ConversationHandler(config, voice_listener=voice_listener, tts_speaker=tts_speaker)
         
-        # Initialize MCP tools and models
-        await handler._setup_mcp_tools()
-        handler._initialize_models()
+        # Use pre-loaded shared MCP tools
+        handler.mcp_tools = shared_mcp_tools
+        handler.tool_handler = shared_tool_handler
+        
+        logger.debug(f"Client {client_id} using shared pre-loaded MCP tools")
         
         try:
             # Send welcome message
@@ -228,6 +257,23 @@ async def run_websocket_server(host: str, port: int, config_path: Optional[str] 
                     "available_tools": handler.get_available_tool_names()
                 }
             }))
+            
+            # Test TTS by sending a connection sound
+            connection_message = "Voice computer connected and ready"
+            logger.info(f"Sending connection test TTS: {connection_message}")
+            
+            # Send the text response first
+            await websocket.send(json.dumps({
+                "type": "text_response",
+                "text": connection_message
+            }))
+            
+            # Generate and send TTS audio
+            try:
+                tts_speaker.speak(connection_message)
+                logger.info("Connection TTS initiated successfully")
+            except Exception as e:
+                logger.error(f"Error generating connection TTS: {e}")
             
             # Track audio chunks for processing
             chunk_count = 0
@@ -278,8 +324,8 @@ async def run_websocket_server(host: str, port: int, config_path: Optional[str] 
             logger.error(f"Error handling client {client_id}: {e}")
         finally:
             connected_clients.discard(websocket)
-            # Cleanup handler
-            await handler._cleanup_mcp_connections()
+            # No need to cleanup shared MCP connections here since they're shared
+            # Only cleanup happens at server shutdown
     
     async def handle_text_query(websocket, handler, data):
         """Handle a text query from client."""
@@ -375,13 +421,13 @@ async def run_websocket_server(host: str, port: int, config_path: Optional[str] 
                         "query": result.get("command", ""),
                         "response": response_text
                     }))
-                elif result.get("command"):
+                elif result.get("command") and result.get("command").strip():
                     # Command detected but not processed yet
                     await handle_text_query(websocket, handler, {
                         "query": result["command"]
                     })
                 else:
-                    # Just activation word
+                    # Just activation word or empty command
                     help_text = "How can I help you?"
                     await websocket.send(json.dumps({
                         "type": "text_response",
@@ -392,6 +438,13 @@ async def run_websocket_server(host: str, port: int, config_path: Optional[str] 
                         "query": "activation",
                         "response": help_text
                     }))
+                    
+                    # Also trigger TTS for the help text by calling the handler's speak method
+                    if handler.tts_speaker:
+                        try:
+                            handler.tts_speaker.speak(help_text)
+                        except Exception as e:
+                            logger.error(f"Error generating TTS for help text: {e}")
                     
             elif result_type == "transcription_only":
                 # No activation word, just transcription
@@ -443,6 +496,14 @@ async def run_websocket_server(host: str, port: int, config_path: Optional[str] 
         if server:
             server.close()
             await server.wait_closed()
+        
+        # Cleanup shared resources
+        logger.info("Cleaning up shared resources...")
+        try:
+            await temp_handler._cleanup_mcp_connections()
+        except Exception as e:
+            logger.error(f"Error cleaning up shared resources: {e}")
+        
         logger.info("Voice Computer Server stopped")
 
 

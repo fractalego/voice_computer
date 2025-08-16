@@ -184,8 +184,7 @@ class ServerVoiceListener:
                     input_features,
                     max_length=448,
                     num_beams=1,
-                    do_sample=False,
-                    language="english"
+                    do_sample=False
                 )
                 
             # Decode the transcription
