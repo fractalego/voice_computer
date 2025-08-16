@@ -60,7 +60,17 @@ class ArgumentExtractor:
         elif client_type == "huggingface":
             extractor_model = config.get_value("extractor_model") or config.get_value("huggingface_model")
             
-            client = model_factory.get_hf_client(model=extractor_model)
+            # Pass quantization settings from main config for extractor
+            device = config.get_value("huggingface_device")
+            torch_dtype = config.get_value("huggingface_torch_dtype")
+            quantization = config.get_value("huggingface_quantization")
+            
+            client = model_factory.get_hf_client(
+                model=extractor_model,
+                device=device,
+                torch_dtype=torch_dtype,
+                quantization=quantization
+            )
             _logger.info(f"Using HuggingFace client for extractor with model {extractor_model}")
             
         else:

@@ -60,7 +60,16 @@ class Entailer:
             if self.client_type == "ollama":
                 self.client = model_factory.get_ollama_client(self.model, self.host)
             elif self.client_type == "huggingface":
-                self.client = model_factory.get_hf_client(self.model)
+                # Pass quantization settings from main config for entailer
+                device = self.config.get_value("huggingface_device")
+                torch_dtype = self.config.get_value("huggingface_torch_dtype") 
+                quantization = self.config.get_value("huggingface_quantization")
+                self.client = model_factory.get_hf_client(
+                    self.model,
+                    device=device,
+                    torch_dtype=torch_dtype,
+                    quantization=quantization
+                )
             else:
                 raise ValueError(f"Unknown client type: {self.client_type}")
             
