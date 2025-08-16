@@ -70,7 +70,7 @@ Voice Computer is a voice-driven assistant that integrates Whisper speech recogn
 ## Key Files to Understand
 
 ### Core System Files
-- `voice_computer/client.py`: Main voice computer client with voice loop and query processing
+- `voice_computer/handler.py`: Main voice computer client with voice loop and query processing
 - `voice_computer/voice_interface.py`: Voice I/O management with audio feedback
 - `voice_computer/whisper_listener.py`: Whisper-based speech recognition using CLI tools
 - `voice_computer/tool_handler.py`: MCP tool execution and result processing with entailment-based selection
@@ -258,3 +258,4 @@ client = VoiceComputerClient(config)
 - **Custom configurations**: Create config classes extending `voice_computer.config.Config`
 - **Add new connectors**: Extend `MCPConnector` class for new MCP server types
 - **Modify voice responses**: System TTS settings handled automatically based on available tools
+- **DO NOT** add openai-whisper or faster-whisper dependencies - use the voice_computer/whisper_listener.py for speech recognition
