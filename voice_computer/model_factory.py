@@ -215,34 +215,32 @@ class ModelFactory:
             
         return self._ollama_cache[cache_key]
     
-    def get_hf_client(self, model: str, api_key: str, **kwargs) -> HFClient:
+    def get_hf_client(self, model: str, **kwargs) -> HFClient:
         """
         Get cached HuggingFace client or create if not cached.
         
         Args:
             model: HuggingFace model name
-            api_key: HuggingFace API key
             **kwargs: Additional HFClient parameters
             
         Returns:
             HFClient instance
         """
         # Create cache key from all relevant parameters
-        cache_key = f"{model}:{api_key}:{hash(frozenset(kwargs.items()))}"
+        cache_key = f"{model}:{hash(frozenset(kwargs.items()))}"
         
         if cache_key not in self._hf_cache:
-            _logger.info(f"Creating HuggingFace client for model: {model}")
+            _logger.info(f"Creating local HuggingFace client for model: {model}")
             
             client = HFClient(
                 model=model,
-                api_key=api_key,
                 **kwargs
             )
             
             self._hf_cache[cache_key] = client
-            _logger.info(f"HuggingFace client for {model} cached successfully")
+            _logger.info(f"Local HuggingFace client for {model} cached successfully")
         else:
-            _logger.debug(f"Using cached HuggingFace client for model: {model}")
+            _logger.debug(f"Using cached local HuggingFace client for model: {model}")
             
         return self._hf_cache[cache_key]
     
@@ -265,12 +263,15 @@ class ModelFactory:
         
         elif client_type == "huggingface":
             model = config_dict.get("huggingface_model", "Qwen/Qwen2.5-32B")
-            api_key = config_dict.get("huggingface_api_key")
-            
-            if not api_key:
-                raise ValueError("HuggingFace API key is required when using huggingface client type")
-            
-            return self.get_hf_client(model=model, api_key=api_key)
+            device = config_dict.get("huggingface_device")
+            torch_dtype = config_dict.get("huggingface_torch_dtype")
+            quantization = config_dict.get("huggingface_quantization")
+            return self.get_hf_client(
+                model=model, 
+                device=device, 
+                torch_dtype=torch_dtype,
+                quantization=quantization
+            )
         
         else:
             raise ValueError(f"Unknown LLM client type: {client_type}. Must be 'ollama' or 'huggingface'")

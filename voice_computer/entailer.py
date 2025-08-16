@@ -1,13 +1,14 @@
 """
 Entailment model for selecting relevant tools from a conversation context.
 
-Uses Ollama language models to determine which tools are relevant for a given query.
+Uses configurable language models (Ollama or HuggingFace) to determine which tools are relevant for a given query.
 """
 
 import logging
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 from .config import Config
 from .client import OllamaClient
+from .client.hf_client import HFClient
 from .model_factory import get_model_factory
 from .data_types import Messages, Utterance
 
@@ -15,11 +16,11 @@ _logger = logging.getLogger(__name__)
 
 
 class Entailer:
-    """Entailment model for selecting relevant tools using Ollama."""
+    """Entailment model for selecting relevant tools using configurable LLM clients."""
     
     def __init__(self, config: Config, tools: Optional[List[Dict[str, Any]]] = None):
         """
-        Initialize the entailer with Ollama client and tools list.
+        Initialize the entailer with configurable client and tools list.
         
         Args:
             config: Configuration object containing model settings
@@ -28,35 +29,46 @@ class Entailer:
         self.config = config
         self.tools = tools or []
 
-        # Use entailer-specific settings or fall back to main Ollama settings
-        self.host = config.get_value("entailer_host") or config.get_value("ollama_host")
-        self.model = config.get_value("entailer_model") or config.get_value("ollama_model")
+        # Determine client type
+        self.client_type = config.get_value("entailer_client_type")
+        if self.client_type is None:
+            # Default to main LLM client type if entailer type not specified
+            self.client_type = config.get_value("llm_client_type") or "ollama"
 
-        
-        self.ollama_client = None
+        # Use entailer-specific settings or fall back to main settings
+        if self.client_type == "ollama":
+            self.host = config.get_value("entailer_host") or config.get_value("ollama_host")
+            self.model = config.get_value("entailer_model") or config.get_value("ollama_model")
+        elif self.client_type == "huggingface":
+            self.model = config.get_value("entailer_model") or config.get_value("huggingface_model")
+        else:
+            raise ValueError(f"Unknown entailer client type: {self.client_type}")
+
+        self.client = None
         self.initialized = False
         
     def initialize(self):
-        """Initialize the Ollama client."""
+        """Initialize the appropriate client based on configuration."""
         if self.initialized:
             return
             
-        _logger.info(f"Initializing entailer with Ollama model {self.model} at {self.host}")
+        _logger.info(f"Initializing entailer with {self.client_type} client using model {self.model}")
         
         try:
-            # Get cached Ollama client from factory if available
             model_factory = get_model_factory()
-            self.ollama_client = model_factory.get_ollama_client(self.model, self.host)
             
-            if self.ollama_client is None:
-                # Create new client if not cached
-                self.ollama_client = OllamaClient(model=self.model, host=self.host)
+            if self.client_type == "ollama":
+                self.client = model_factory.get_ollama_client(self.model, self.host)
+            elif self.client_type == "huggingface":
+                self.client = model_factory.get_hf_client(self.model)
+            else:
+                raise ValueError(f"Unknown client type: {self.client_type}")
             
             self.initialized = True
-            _logger.info(f"Entailer initialized successfully with model {self.model}")
+            _logger.info(f"Entailer initialized successfully with {self.client_type} client and model {self.model}")
             
         except Exception as e:
-            _logger.error(f"Failed to initialize entailer with model {self.model}: {e}")
+            _logger.error(f"Failed to initialize entailer with {self.client_type} client and model {self.model}: {e}")
             raise
     
     async def select_relevant_tools(self, conversation_context: str) -> List[int]:
@@ -79,12 +91,12 @@ class Entailer:
             # Create tool selection prompt
             prompt = self._create_tool_selection_prompt(conversation_context)
             
-            # Create Messages object for Ollama
+            # Create Messages object for the client
             messages = Messages()
             messages = messages.add_user_utterance(prompt)
             
-            # Get response from Ollama
-            response = await self.ollama_client.predict(messages)
+            # Get response from the configured client
+            response = await self.client.predict(messages)
             
             # Parse the response to get tool indices
             return self._parse_tool_indices(response.message)
@@ -263,12 +275,12 @@ Answer:"""
             # Create entailment prompt with all target sentences
             prompt = self._create_sentence_matching_prompt(user_input, target_sentences)
             
-            # Create Messages object for Ollama
+            # Create Messages object for the client
             messages = Messages()
             messages = messages.add_user_utterance(prompt)
             
-            # Get response from Ollama
-            response = await self.ollama_client.predict(messages)
+            # Get response from the configured client
+            response = await self.client.predict(messages)
             
             # Parse the response to get sentence indices
             return self._parse_sentence_indices(response.message, len(target_sentences))

@@ -54,6 +54,7 @@ Voice Computer is a voice-driven assistant that integrates Whisper speech recogn
 ### Configuration
 - Config loaded from JSON files or programmatic configuration classes
 - Default Ollama model: `qwen2.5:32b` 
+- Default HuggingFace quantization: `bfloat16` (can use `8bit`, `4bit` for memory efficiency)
 - Configurable MCP servers in `mcp_servers` array
 - Voice settings: volume threshold, silence timeout, activation sounds
 - Use `voice_computer.config.load_config()` for loading configurations
@@ -161,6 +162,34 @@ ALL THE TESTS ARE NOW IN THE `tests/` DIRECTORY
       "name": "filesystem",
       "path": "mcp-server-filesystem",
       "args": ["--root", "/tmp"]
+    }
+  ]
+}
+```
+
+### HuggingFace with Quantization (JSON config)
+```json
+{
+  "listener_model": {
+    "listener_silence_timeout": 2,
+    "listener_volume_threshold": 0.6,
+    "listener_hotword_logp": -8
+  },
+  "activation_hotwords": ["computer"],
+  "waking_up_sound": true,
+  "deactivate_sound": true,
+  "whisper_model": "fractalego/personal-whisper-distilled-model",
+  
+  "llm_client_type": "huggingface",
+  "huggingface_model": "Qwen/Qwen2.5-32B",
+  "huggingface_quantization": "4bit",
+  "huggingface_device": null,
+  
+  "mcp_servers": [
+    {
+      "name": "math",
+      "path": "python",
+      "args": ["-m", "voice_computer.mcp_servers.math_mcp_server"]
     }
   ]
 }

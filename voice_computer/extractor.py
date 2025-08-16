@@ -1,12 +1,13 @@
 """
-Argument extractor for extracting tool arguments from natural language queries using LLM.
+Argument extractor for extracting tool arguments from natural language queries using configurable LLM.
 """
 
 import json
 import logging
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Union
 from .config import Config
 from .client import OllamaClient
+from .client.hf_client import HFClient
 from .data_types import Messages, Utterance
 from .model_factory import get_model_factory
 from .prompt import get_argument_extraction_system_prompt, format_parameter_descriptions
@@ -15,35 +16,57 @@ _logger = logging.getLogger(__name__)
 
 
 class ArgumentExtractor:
-    """Extracts tool arguments from natural language using LLM."""
+    """Extracts tool arguments from natural language using configurable LLM."""
     
-    def __init__(self, ollama_client: Optional[OllamaClient] = None, config: Optional[Config] = None):
+    def __init__(self, client: Optional[Union[OllamaClient, HFClient]] = None, config: Optional[Config] = None):
         """
         Initialize the argument extractor.
         
         Args:
-            ollama_client: Ollama client for LLM communication (optional, will create from config if None)
+            client: LLM client for communication (optional, will create from config if None)
             config: Configuration object (optional)
         """
         self.config = config
         
         # Determine which client to use
-        if ollama_client is not None:
+        if client is not None:
             # Use provided client
-            self.client = ollama_client
+            self.client = client
         elif config is not None:
-            # Get cached client from factory
+            # Get client from factory based on config
+            self.client = self._create_client_from_config(config)
+        else:
+            raise ValueError("Either client or config must be provided")
+
+    def _create_client_from_config(self, config: Config) -> Union[OllamaClient, HFClient]:
+        """Create appropriate client based on configuration."""
+        client_type = config.get_value("extractor_client_type")
+        if client_type is None:
+            # Default to main LLM client type if extractor type not specified
+            client_type = config.get_value("llm_client_type") or "ollama"
+
+        model_factory = get_model_factory()
+        
+        if client_type == "ollama":
             extractor_host = config.get_value("extractor_host") or config.get_value("ollama_host")
             extractor_model = config.get_value("extractor_model") or config.get_value("ollama_model")
             
-            model_factory = get_model_factory()
-            self.client = model_factory.get_ollama_client(
+            client = model_factory.get_ollama_client(
                 model=extractor_model,
                 host=extractor_host
             )
-            _logger.info(f"Using cached OllamaClient for extractor with model {extractor_model} at {extractor_host}")
+            _logger.info(f"Using Ollama client for extractor with model {extractor_model} at {extractor_host}")
+            
+        elif client_type == "huggingface":
+            extractor_model = config.get_value("extractor_model") or config.get_value("huggingface_model")
+            
+            client = model_factory.get_hf_client(model=extractor_model)
+            _logger.info(f"Using HuggingFace client for extractor with model {extractor_model}")
+            
         else:
-            raise ValueError("Either ollama_client or config must be provided")
+            raise ValueError(f"Unknown extractor client type: {client_type}")
+            
+        return client
     
     async def extract_arguments(self, query: str, tool_name: str, tool_description: str, input_schema: Dict[str, Any], 
                               conversation_history: Optional[List[Utterance]] = None, facts: Optional[List[str]] = None) -> Dict[str, Any]:

@@ -30,9 +30,10 @@ class Config:
             # Whisper model settings
             "whisper_model": "fractalego/personal-whisper-distilled-model",  # Hugging Face model ID
             
-            # Entailment settings (using Ollama)
+            # Entailment settings
+            "entailer_client_type": None,           # "ollama", "huggingface", or None to use llm_client_type
             "entailer_host": None,                  # Use ollama_host if None
-            "entailer_model": None,                 # Use ollama_model if None  
+            "entailer_model": None,                 # Use ollama_model/huggingface_model if None  
             "entailer_conversation_history_length": 3,  # Number of recent utterances to include for entailment context
             
             # LLM client configuration
@@ -42,13 +43,16 @@ class Config:
             "ollama_host": "http://localhost:11434",
             "ollama_model": "qwen2.5:32b",          # or any model you have in Ollama
             
-            # HuggingFace settings  
-            "huggingface_model": "Qwen/Qwen2.5-32B",  # Default HF model
-            "huggingface_api_key": None,            # Required for HF API
+            # HuggingFace local model settings  
+            "huggingface_model": "Qwen/Qwen2.5-32B",       # Default HF model
+            "huggingface_quantization": "bfloat16",        # "bfloat16", "float16", "float32", "8bit", "4bit"
+            "huggingface_device": None,                     # "cuda", "cpu", or None for auto-detection
+            "huggingface_torch_dtype": None,                # Override quantization dtype if needed
             
             # Extractor LLM settings (for argument extraction from queries)
+            "extractor_client_type": None,          # "ollama", "huggingface", or None to use llm_client_type
             "extractor_host": None,                 # Use ollama_host if None
-            "extractor_model": None,                # Use ollama_model if None
+            "extractor_model": None,                # Use ollama_model/huggingface_model if None
             "extractor_conversation_history_length": 2,  # Number of recent exchanges to include in context
             
             # MCP servers configuration
