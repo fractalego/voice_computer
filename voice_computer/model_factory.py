@@ -13,8 +13,8 @@ from transformers import (
     SpeechT5Processor, SpeechT5ForTextToSpeech, SpeechT5HifiGan,
     AutoModelForSequenceClassification, AutoTokenizer
 )
-from .client import OllamaClient
-from .client.hf_client import HFClient
+from voice_computer.client import OllamaClient
+from voice_computer.client.hf_client import HFClient
 
 _logger = logging.getLogger(__name__)
 

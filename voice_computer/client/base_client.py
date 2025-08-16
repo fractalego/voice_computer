@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod
 from typing import Optional, List
 import asyncio
 
-from ..data_types import Messages, Tool, ClientResponse
+from voice_computer.data_types import Messages, Tool, ClientResponse
 
 
 class BaseClient(ABC):

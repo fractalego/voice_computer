@@ -7,8 +7,8 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from .whisper_listener import WhisperListener
-from .speaker import SoundFileSpeaker, TTSSpeaker
+from voice_computer.whisper_listener import WhisperListener
+from voice_computer.speaker import SoundFileSpeaker, TTSSpeaker
 
 _logger = logging.getLogger(__name__)
 

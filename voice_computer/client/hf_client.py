@@ -9,8 +9,8 @@ from typing import Optional, List
 from concurrent.futures import ThreadPoolExecutor
 from transformers import AutoTokenizer, AutoModelForCausalLM, TextStreamer
 
-from .base_client import BaseClient
-from ..data_types import Messages, Tool, ClientResponse, ToolCall
+from voice_computer.client.base_client import BaseClient
+from voice_computer.data_types import Messages, Tool, ClientResponse, ToolCall
 
 _logger = logging.getLogger(__name__)
 

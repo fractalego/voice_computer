@@ -7,7 +7,7 @@ import pyaudio
 import wave
 from typing import Optional
 
-from .base_speaker import BaseSpeaker
+from voice_computer.speaker.base_speaker import BaseSpeaker
 
 _logger = logging.getLogger(__name__)
 

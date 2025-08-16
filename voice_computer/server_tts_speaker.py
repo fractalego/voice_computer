@@ -13,10 +13,10 @@ import numpy as np
 
 from typing import Optional, Callable, Any, Dict
 
-from .base_speaker import BaseSpeaker
-from .number_conversion_to_words import convert_numbers_to_words
-from ..speaker_embeddings import get_default_speaker_embedding
-from ..model_factory import get_model_factory
+from voice_computer.speaker.base_speaker import BaseSpeaker
+from voice_computer.speaker.number_conversion_to_words import convert_numbers_to_words
+from voice_computer.speaker_embeddings import get_default_speaker_embedding
+from voice_computer.model_factory import get_model_factory
 
 _logger = logging.getLogger(__name__)
 

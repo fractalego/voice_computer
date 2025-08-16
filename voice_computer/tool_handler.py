@@ -5,14 +5,14 @@ Tool handler for selecting and executing MCP tools based on entailment scoring.
 import logging
 from collections import deque
 from typing import List, Dict, Any, Optional, NamedTuple, TYPE_CHECKING
-from .config import Config
-from .entailer import Entailer
-from .extractor import ArgumentExtractor
-from .client import OllamaClient
-from .mcp_connector import MCPTools
+from voice_computer.config import Config
+from voice_computer.entailer import Entailer
+from voice_computer.extractor import ArgumentExtractor
+from voice_computer.client import OllamaClient
+from voice_computer.mcp_connector import MCPTools
 
 if TYPE_CHECKING:
-    from .voice_interface import VoiceInterface
+    from voice_computer.voice_interface import VoiceInterface
 
 _logger = logging.getLogger(__name__)
 

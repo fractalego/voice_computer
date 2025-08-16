@@ -6,7 +6,7 @@ import asyncio
 import logging
 
 from typing import Optional, Callable
-from .stopwords import is_stopword
+from voice_computer.stopwords import is_stopword
 
 # Utility function to check if a value is numeric
 def is_numeric(value):

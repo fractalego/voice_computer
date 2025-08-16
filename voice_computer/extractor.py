@@ -5,12 +5,12 @@ Argument extractor for extracting tool arguments from natural language queries u
 import json
 import logging
 from typing import Dict, Any, Optional, List, Union
-from .config import Config
-from .client import OllamaClient
-from .client.hf_client import HFClient
-from .data_types import Messages, Utterance
-from .model_factory import get_model_factory
-from .prompt import get_argument_extraction_system_prompt, format_parameter_descriptions
+from voice_computer.config import Config
+from voice_computer.client import OllamaClient
+from voice_computer.client.hf_client import HFClient
+from voice_computer.data_types import Messages, Utterance
+from voice_computer.model_factory import get_model_factory
+from voice_computer.prompt import get_argument_extraction_system_prompt, format_parameter_descriptions
 
 _logger = logging.getLogger(__name__)
 

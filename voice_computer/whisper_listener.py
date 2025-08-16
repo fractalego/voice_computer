@@ -14,8 +14,8 @@ import torch._dynamo
 torch._dynamo.config.suppress_errors = True
 
 from transformers import WhisperProcessor, WhisperForConditionalGeneration
-from .model_factory import get_model_factory
-from .sound_thresholds import calculate_rms
+from voice_computer.model_factory import get_model_factory
+from voice_computer.sound_thresholds import calculate_rms
 
 _logger = logging.getLogger(__name__)
 

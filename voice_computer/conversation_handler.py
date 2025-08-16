@@ -6,21 +6,21 @@ import asyncio
 import logging
 from typing import Optional, List, Dict, Any
 
-from .voice_interface import VoiceInterface
-from .server_voice_listener import ServerVoiceListener
-from .data_types import Messages, Utterance
-from .tool_handler import ToolHandler
-from .mcp_connector import MCPStdioConnector
-from .config import Config
-from .streaming_display import (
+from voice_computer.voice_interface import VoiceInterface
+from voice_computer.server_voice_listener import ServerVoiceListener
+from voice_computer.data_types import Messages, Utterance
+from voice_computer.tool_handler import ToolHandler
+from voice_computer.mcp_connector import MCPStdioConnector
+from voice_computer.config import Config
+from voice_computer.streaming_display import (
     stream_colored_to_console_with_tts, 
     stream_colored_to_console,
 )
-from .speaker import TTSSpeaker
-from .server_tts_speaker import ServerTTSSpeaker
-from .entailer import Entailer
-from .model_factory import get_model_factory
-from .prompt import get_voice_assistant_system_prompt, format_tool_context
+from voice_computer.speaker import TTSSpeaker
+from voice_computer.server_tts_speaker import ServerTTSSpeaker
+from voice_computer.entailer import Entailer
+from voice_computer.model_factory import get_model_factory
+from voice_computer.prompt import get_voice_assistant_system_prompt, format_tool_context
 
 _logger = logging.getLogger(__name__)
 
