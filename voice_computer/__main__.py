@@ -275,48 +275,47 @@ async def run_websocket_server(host: str, port: int, config_path: Optional[str] 
             except Exception as e:
                 logger.error(f"Error generating connection TTS: {e}")
             
-            # Track audio chunks for processing
-            chunk_count = 0
-            
-            async for message in websocket:
-                try:
-                    data = json.loads(message)
-                    message_type = data.get("type")
-                    
-                    if message_type == "text_query":
-                        await handle_text_query(websocket, handler, data)
-                    elif message_type == "audio_chunk":
-                        await handle_audio_chunk(websocket, handler, data, chunk_count)
-                        chunk_count += 1
-                        # Process every ~3 seconds of audio
-                        if chunk_count >= 50:
-                            chunk_count = 0
-                            await process_accumulated_audio(websocket, handler)
-                    elif message_type == "reset_conversation":
-                        handler._reset_conversation_state()
-                        await websocket.send(json.dumps({
-                            "type": "conversation_reset",
-                            "message": "Conversation history cleared"
-                        }))
-                    elif message_type == "get_status":
-                        await send_status(websocket, handler, len(connected_clients))
-                    else:
-                        await websocket.send(json.dumps({
-                            "type": "error",
-                            "error": f"Unknown message type: {message_type}"
-                        }))
+            # Create WebSocket message handler for the voice listener
+            async def websocket_message_handler():
+                async for message in websocket:
+                    try:
+                        data = json.loads(message)
+                        message_type = data.get("type")
                         
-                except json.JSONDecodeError:
-                    await websocket.send(json.dumps({
-                        "type": "error",
-                        "error": "Invalid JSON format"
-                    }))
-                except Exception as e:
-                    logger.error(f"Error processing message from {client_id}: {e}")
-                    await websocket.send(json.dumps({
-                        "type": "error",
-                        "error": f"Server error: {str(e)}"
-                    }))
+                        if message_type == "audio_chunk":
+                            await handle_audio_chunk(websocket, handler, data)
+                        elif message_type == "reset_conversation":
+                            handler._reset_conversation_state()
+                            await websocket.send(json.dumps({
+                                "type": "conversation_reset",
+                                "message": "Conversation history cleared"
+                            }))
+                        elif message_type == "get_status":
+                            await send_status(websocket, handler, len(connected_clients))
+                        else:
+                            logger.warning(f"Unknown message type: {message_type}")
+                            
+                    except json.JSONDecodeError:
+                        logger.error("Invalid JSON format from client")
+                    except Exception as e:
+                        logger.error(f"Error processing message from {client_id}: {e}")
+            
+            # Start the message handler task
+            message_task = asyncio.create_task(websocket_message_handler())
+            
+            # Run the conversation loop (this handles all the voice logic)
+            logger.info(f"Starting conversation loop for client {client_id}")
+            conversation_task = asyncio.create_task(handler.run_voice_loop())
+            
+            # Wait for either task to complete
+            done, pending = await asyncio.wait(
+                [message_task, conversation_task],
+                return_when=asyncio.FIRST_COMPLETED
+            )
+            
+            # Cancel any remaining tasks
+            for task in pending:
+                task.cancel()
                     
         except websockets.exceptions.ConnectionClosed:
             logger.info(f"Client disconnected: {client_id}")
@@ -327,62 +326,8 @@ async def run_websocket_server(host: str, port: int, config_path: Optional[str] 
             # No need to cleanup shared MCP connections here since they're shared
             # Only cleanup happens at server shutdown
     
-    async def handle_text_query(websocket, handler, data):
-        """Handle a text query from client."""
-        query = data.get("query", "").strip()
-        if not query:
-            await websocket.send(json.dumps({
-                "type": "error", 
-                "error": "Empty query"
-            }))
-            return
-            
-        logger.info(f"Processing text query: {query}")
-        
-        try:
-            # Send query started notification
-            await websocket.send(json.dumps({
-                "type": "query_started",
-                "query": query
-            }))
-            
-            # Check for exit command
-            if await handler.is_exit_command(query):
-                await websocket.send(json.dumps({
-                    "type": "exit_command",
-                    "message": "Goodbye!"
-                }))
-                handler._reset_conversation_state()
-                return
-            
-            # Process query
-            response = await handler.process_query(query, use_streaming=False)
-            
-            # Send text response first (for immediate display)
-            await websocket.send(json.dumps({
-                "type": "text_response",
-                "text": response
-            }))
-            
-            # Send final response
-            await websocket.send(json.dumps({
-                "type": "query_response",
-                "query": query,
-                "response": response,
-                "conversation_length": handler.get_conversation_length()
-            }))
-            
-            # TTS is handled automatically by the ServerTTSSpeaker
-            
-        except Exception as e:
-            logger.error(f"Error processing text query: {e}")
-            await websocket.send(json.dumps({
-                "type": "error",
-                "error": f"Error processing query: {str(e)}"
-            }))
-    
-    async def handle_audio_chunk(websocket, handler, data, chunk_count):
-        """Handle real-time audio chunk from client."""
+    async def handle_audio_chunk(websocket, handler, data):
+        """Handle real-time audio chunk from client - just pass to voice listener."""
         audio_data = data.get("audio_data", "")
         if audio_data:
             try:
@@ -390,74 +335,6 @@ async def run_websocket_server(host: str, port: int, config_path: Optional[str] 
                 await handler.add_audio_chunk(decoded_audio)
             except Exception as e:
                 logger.error(f"Error decoding audio data: {e}")
-    
-    async def process_accumulated_audio(websocket, handler):
-        """Process accumulated audio for activation words and commands."""
-        try:
-            result = await handler.process_accumulated_audio()
-            
-            if not result:
-                return
-                
-            result_type = result.get("type")
-            
-            if result_type == "activation_detected":
-                # Send activation notification
-                await websocket.send(json.dumps({
-                    "type": "activation_detected",
-                    "activation_word": result.get("activation_word"),
-                    "full_text": result.get("full_text")
-                }))
-                
-                # If there's a response, send it
-                if "response" in result:
-                    response_text = result["response"]
-                    await websocket.send(json.dumps({
-                        "type": "text_response",
-                        "text": response_text
-                    }))
-                    await websocket.send(json.dumps({
-                        "type": "query_response",
-                        "query": result.get("command", ""),
-                        "response": response_text
-                    }))
-                elif result.get("command") and result.get("command").strip():
-                    # Command detected but not processed yet
-                    await handle_text_query(websocket, handler, {
-                        "query": result["command"]
-                    })
-                else:
-                    # Just activation word or empty command
-                    help_text = "How can I help you?"
-                    await websocket.send(json.dumps({
-                        "type": "text_response",
-                        "text": help_text
-                    }))
-                    await websocket.send(json.dumps({
-                        "type": "query_response",
-                        "query": "activation",
-                        "response": help_text
-                    }))
-                    
-                    # Also trigger TTS for the help text by calling the handler's speak method
-                    if handler.tts_speaker:
-                        try:
-                            handler.tts_speaker.speak(help_text)
-                        except Exception as e:
-                            logger.error(f"Error generating TTS for help text: {e}")
-                    
-            elif result_type == "transcription_only":
-                # No activation word, just transcription
-                await websocket.send(json.dumps({
-                    "type": "audio_processed",
-                    "transcribed_text": result.get("text", "")
-                }))
-                
-            elif result_type == "error":
-                logger.error(f"Audio processing error: {result.get('error')}")
-                
-        except Exception as e:
-            logger.error(f"Error processing accumulated audio: {e}")
     
     async def send_status(websocket, handler, client_count):
         """Send server status information."""
@@ -468,8 +345,7 @@ async def run_websocket_server(host: str, port: int, config_path: Optional[str] 
             "failed_tools_count": len(handler.failed_tools_queue),
             "available_tools": handler.get_available_tool_names(),
             "streaming_enabled": True,
-            "connected_clients": client_count,
-            "audio_buffer_duration": handler.get_buffer_duration()
+            "connected_clients": client_count
         }
         await websocket.send(json.dumps(status))
     
