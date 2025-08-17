@@ -2,10 +2,8 @@
 Base listener class with common functionality for all voice listeners.
 """
 
-import asyncio
 import logging
 import numpy as np
-import time
 import torch
 from abc import ABC, abstractmethod
 from typing import Optional, List, Tuple
@@ -13,9 +11,8 @@ from typing import Optional, List, Tuple
 import torch._dynamo
 torch._dynamo.config.suppress_errors = True
 
-from transformers import WhisperProcessor, WhisperForConditionalGeneration
 from voice_computer.model_factory import get_model_factory
-from voice_computer.sound_thresholds import calculate_rms
+from voice_computer.listeners.sound_thresholds import calculate_rms
 
 _logger = logging.getLogger(__name__)
 
@@ -106,19 +103,12 @@ class BaseListener(ABC):
             _logger.error(f"Failed to initialize Whisper model {self.whisper_model_name}: {e}")
             raise
     
-    def _rms(self, data):
+    def _rms(self, frame: bytes) -> float:
         """Calculate RMS of audio data."""
-        if len(data) == 0:
+        if len(frame) == 0:
             return 0.0
         
-        # Convert bytes to numpy array if needed
-        if isinstance(data, bytes):
-            audio_array = np.frombuffer(data, dtype=np.int16)
-            audio_float = audio_array.astype(np.float32) / self.range
-        else:
-            audio_float = data
-            
-        return calculate_rms(audio_float)
+        return calculate_rms(frame)
     
     async def detect_activation_words(self, text: str) -> Optional[str]:
         """
@@ -186,14 +176,6 @@ class BaseListener(ABC):
             self.initialize()
         
         try:
-            # Ensure audio is float32 and normalized
-            if audio_data.dtype != np.float32:
-                audio_data = audio_data.astype(np.float32)
-            
-            # Normalize audio to [-1, 1] range if needed
-            if np.max(np.abs(audio_data)) > 1.0:
-                audio_data = audio_data / np.max(np.abs(audio_data))
-            
             # Process with Whisper processor
             inputs = self.processor(
                 audio_data,
@@ -289,3 +271,11 @@ class BaseListener(ABC):
         except Exception as e:
             _logger.error(f"Error in {self.__class__.__name__}.input(): {e}")
             return ""
+
+
+class VoiceInterruptionException(Exception):
+    """Exception raised when voice input is interrupted."""
+
+    def __init__(self, message: str = "Voice input interrupted"):
+        super().__init__(message)
+        _logger.warning(message)

@@ -9,7 +9,7 @@ import pyaudio
 import time
 from typing import Optional, List, Tuple
 
-from .base_listener import BaseListener
+from .base_listener import BaseListener, VoiceInterruptionException
 
 _logger = logging.getLogger(__name__)
 
@@ -19,7 +19,8 @@ class MicrophoneListener(BaseListener):
     
     def __init__(self, config=None):
         super().__init__(config)
-        
+        self._range = 32768  # Range for int16 audio data
+
         # PyAudio-specific settings
         self.format = pyaudio.paInt16
         self.device_index = None
@@ -155,9 +156,8 @@ class MicrophoneListener(BaseListener):
             if audio_frames:
                 # Convert audio frames to numpy array
                 audio_data = b''.join(audio_frames)
-                audio_array = np.frombuffer(audio_data, dtype=np.int16)
-                audio_float = audio_array.astype(np.float32) / 32768.0
-                return audio_float, voice_detected
+                audio_array = np.frombuffer(audio_data, dtype=np.int16) / self._range
+                return audio_array, voice_detected
             else:
                 return None, False
                 
@@ -177,7 +177,7 @@ class MicrophoneListener(BaseListener):
                 
                 if rms > self.volume_threshold:
                     # Voice activity detected
-                    raise Exception("Voice activity detected")
+                    raise VoiceInterruptionException("Voice activity detected")
                 
                 await asyncio.sleep(0.01)
                 

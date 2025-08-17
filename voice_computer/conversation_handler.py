@@ -6,6 +6,7 @@ import asyncio
 import logging
 from typing import Optional, List, Dict, Any
 
+from voice_computer.listeners.base_listener import VoiceInterruptionException
 from voice_computer.voice_interface import VoiceInterface
 from voice_computer.data_types import Messages, Utterance
 from voice_computer.tool_handler import ToolHandler
@@ -618,7 +619,7 @@ class ConversationHandler:
             async def listening_with_cancellation():
                 try:
                     await self.voice_interface.throw_exception_on_voice_activity()
-                except Exception as e:
+                except VoiceInterruptionException as e:
                     # Cancel other tasks immediately when voice interruption occurs
                     _logger.info(f"Voice activity detected in {'server' if self.server_mode else 'local'} mode, cancelling prediction and display tasks")
                     _logger.debug(f"Voice activity details: {e}")
@@ -665,21 +666,6 @@ class ConversationHandler:
                     import traceback
                     _logger.debug(traceback.format_exc())
 
-            
-            # Check if any task raised an exception
-            from .streaming_display import StreamingCompletionException
-            # for task in done:
-            #     try:
-            #         # exception = task.exception()
-            #         # if exception:
-            #         #     _logger.debug(f"Task {task.get_name()} raised exception: {exception}")
-            #         #     if not isinstance(exception, StreamingCompletionException) \
-            #         #        and not isinstance(exception, asyncio.exceptions.CancelledError):
-            #         #         raise exception
-            #     except Exception as e:
-            #         # Ignore errors when accessing task exceptions (can happen during cleanup)
-            #         _logger.debug(f"Error accessing exception for task {task.get_name()}: {e}")
-            
             # Get the result from the prediction task if it completed
             if prediction_task in done:
                 try:

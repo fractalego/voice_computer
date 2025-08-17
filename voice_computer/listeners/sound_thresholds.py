@@ -13,7 +13,7 @@ _logger = logging.getLogger(__name__)
 
 
 
-def calculate_rms(audio_data: np.ndarray) -> float:
+def calculate_rms(frame: bytes) -> float:
     """
     Calculate RMS (Root Mean Square) level of audio data.
     
@@ -23,11 +23,12 @@ def calculate_rms(audio_data: np.ndarray) -> float:
     Returns:
         RMS level as float between 0 and 1
     """
+
+    audio_data = np.frombuffer(frame, dtype=np.int16)
     if len(audio_data) == 0:
         return 0.0
 
-    # Correct RMS calculation: sqrt(mean(x^2))
-    rms = np.sqrt(np.mean(audio_data.astype(np.float64) ** 2))
+    rms = np.std(audio_data) / len(audio_data)
 
     # Handle NaN or infinite values
     if not np.isfinite(rms):

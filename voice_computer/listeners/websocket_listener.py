@@ -9,7 +9,7 @@ import numpy as np
 import time
 from typing import Optional, List, Dict, Any, Tuple
 
-from .base_listener import BaseListener
+from .base_listener import BaseListener, VoiceInterruptionException
 
 _logger = logging.getLogger(__name__)
 
@@ -58,9 +58,15 @@ class WebSocketListener(BaseListener):
     
     async def throw_exception_on_voice_activity(self):
         """Monitor for voice activity and throw exception when detected."""
-        # In server mode, this is handled differently - WebSocket stream is continuous
-        # Just wait forever to avoid interrupting streaming responses
-        await asyncio.Future()  # Wait forever
+        async with self.buffer_lock:
+            if not self.audio_buffer:
+                return
+            audio_bytes = bytes(self.audio_buffer)
+            rms = self._rms(audio_bytes)
+            if rms > self.volume_threshold:
+                _logger.debug(f"Voice activity detected with RMS={rms:.6f}, throwing exception")
+                raise VoiceInterruptionException("Voice activity detected in WebSocket audio buffer")
+
     
     async def transcribe_accumulated_audio(self) -> Optional[str]:
         """

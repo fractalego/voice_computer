@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Optional
 
 from voice_computer.listeners import MicrophoneListener
+from voice_computer.listeners.base_listener import VoiceInterruptionException
 from voice_computer.speaker import SoundFileSpeaker, TTSSpeaker
 
 _logger = logging.getLogger(__name__)
@@ -160,15 +161,6 @@ class VoiceInterface:
                 if instruction:
                     _logger.info(f"Instruction detected with hotword: '{instruction}'")
                 return (detected_hotword, instruction)
-            
-            # Also check using the advanced logp-based detection if available
-            try:
-                hotword = await self._listener.get_hotword_if_present()
-                if hotword:
-                    _logger.info(f"Hotword '{hotword}' detected via logp analysis!")
-                    return (hotword, "")
-            except Exception as e:
-                _logger.debug(f"Logp-based hotword detection failed: {e}")
             
             # If no hotword detected, continue listening
             _logger.debug(f"No hotword detected in: '{text}', continuing to listen...")
@@ -395,13 +387,4 @@ class VoiceInterface:
         Monitor audio volume and throw exception immediately when voice activity is detected.
         This is much faster than full speech transcription.
         """
-        await self._listener.detect_voice_activity()
-        raise VoiceInterruptionException("Voice activity detected, interrupting output.")
-
-
-class VoiceInterruptionException(Exception):
-    """Exception raised when voice input is interrupted."""
-
-    def __init__(self, message: str = "Voice input interrupted"):
-        super().__init__(message)
-        _logger.warning(message)
+        await self._listener.throw_exception_on_voice_activity()
