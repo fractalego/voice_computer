@@ -710,15 +710,9 @@ class ConversationHandler:
                         self.tts_speaker.cancel_playback()
                     raise e
             
-            # Only create listening task in local mode - server mode handles interruption differently
-            if not self.server_mode:
-                listening_task = asyncio.create_task(listening_with_cancellation())
-                task_list = [prediction_task, display_task, listening_task]
-                _logger.debug("Created voice activity monitoring task for local mode")
-            else:
-                # In server mode, don't monitor for voice activity during response generation
-                task_list = [prediction_task, display_task]
-                _logger.debug("Server mode: skipping voice activity monitoring during response generation")
+            listening_task = asyncio.create_task(listening_with_cancellation())
+            task_list = [prediction_task, display_task, listening_task]
+            _logger.debug("Created voice activity monitoring task for local mode")
             
             # Wait for the first exception (voice interruption) or all tasks to complete
             done, pending = await asyncio.wait(

@@ -63,7 +63,7 @@ class WebSocketListener(BaseListener):
         async with self.buffer_lock:
             if not self.audio_buffer:
                 return
-            audio_bytes = bytes(self.audio_buffer)
+            audio_bytes = bytes(self.audio_buffer[-self.chunk:])
             rms = self._rms(audio_bytes)
             if rms > self.volume_threshold:
                 _logger.debug(f"Voice activity detected with RMS={rms:.6f}, throwing exception")
