@@ -5,7 +5,6 @@ Server TTS Speaker implementation that sends audio data over WebSocket instead o
 import asyncio
 import logging
 import time
-import json
 import base64
 
 import torch

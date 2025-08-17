@@ -151,8 +151,6 @@ class StreamingDisplay:
         _logger.debug("Streaming display completed")
         
         # Signal completion to client by throwing an exception
-        if self.tts_speaker:
-            await self.tts_speaker.speak_batch()
         raise StreamingCompletionException("Display stream completed")
 
 
