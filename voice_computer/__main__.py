@@ -332,7 +332,6 @@ async def run_websocket_server(host: str, port: int, config_path: Optional[str] 
         if audio_data:
             try:
                 decoded_audio = base64.b64decode(audio_data)
-                logger.debug(f"Decoded audio chunk: {len(decoded_audio)} bytes")
                 await handler.add_audio_chunk(decoded_audio)
             except Exception as e:
                 logger.error(f"Error decoding audio data: {e}")

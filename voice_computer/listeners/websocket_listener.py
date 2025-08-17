@@ -19,6 +19,8 @@ class WebSocketListener(BaseListener):
     
     def __init__(self, config=None):
         super().__init__(config)
+
+        self._range = 32768 # Range for int16 audio samples
         
         # WebSocket-specific audio buffer
         self.audio_buffer = []
@@ -50,7 +52,6 @@ class WebSocketListener(BaseListener):
                 buffer_size_before = len(self.audio_buffer)
                 self.audio_buffer.extend(audio_data)
                 buffer_size_after = len(self.audio_buffer)
-                _logger.debug(f"Audio buffer: {buffer_size_before} -> {buffer_size_after} bytes ({len(audio_data)} bytes received)")
             
         except Exception as e:
             _logger.error(f"Error adding audio chunk: {e}")
@@ -83,9 +84,6 @@ class WebSocketListener(BaseListener):
             audio_data = np.array(self.audio_buffer)
             self.audio_buffer.clear()
         
-        if len(audio_data) < self.rate * 0.5:  # Less than 0.5 seconds
-            return None
-        
         # Transcribe using base class method
         return await self.transcribe_audio(audio_data)
     
@@ -100,63 +98,58 @@ class WebSocketListener(BaseListener):
         Returns:
             Tuple of (audio_data, voice_detected)
         """
+
+        if not self.is_active:
+            self.activate()
+
         if timeout_seconds is None:
             timeout_seconds = self.timeout
-        
+
         try:
+            audio_frames = []
             start_time = time.time()
             silence_start = None
             voice_detected = False
-            
+
             while time.time() - start_time < timeout_seconds:
-                async with self.buffer_lock:
-                    # Check if we have enough bytes (0.5 seconds = rate * 0.5 samples * 2 bytes per sample)
-                    bytes_needed = int(self.rate * 0.5 * 2)  # 2 bytes per int16 sample
-                    if len(self.audio_buffer) >= bytes_needed:
-                        # Get current buffer as bytes data
-                        audio_bytes = bytes(self.audio_buffer)
-                        self.audio_buffer.clear()
-                        
-                        # Convert bytes to numpy array (like MicrophoneListener processes frames)
-                        audio_array = np.frombuffer(audio_bytes, dtype=np.int16)
-                        audio_float = audio_array.astype(np.float32) / 32768.0
-                        
-                        # Check voice activity using the same _rms method as MicrophoneListener
-                        rms = self._rms(audio_bytes)
-                        if rms > self.volume_threshold:
-                            voice_detected = True
-                            silence_start = None
-                        else:
-                            if silence_start is None:
-                                silence_start = time.time()
-                            elif voice_detected and (time.time() - silence_start) > self.timeout:
-                                # End of speech detected
-                                break
-                        
-                        # If we have voice activity or enough audio, return it
-                        if voice_detected or len(audio_bytes) >= self.rate * 1.0 * 2:  # 1 second minimum (in bytes)
-                            _logger.debug(f"Returning {len(audio_float)} samples, RMS={rms:.6f}, voice_detected={voice_detected}")
-                            return audio_float, voice_detected
-                
-                await asyncio.sleep(0.1)  # Check every 100ms
-            
-            # Timeout reached - return any buffered audio
-            async with self.buffer_lock:
-                if self.audio_buffer:
-                    audio_bytes = bytes(self.audio_buffer)
+                try:
+                    frame = bytes(self.audio_buffer)
+                    if not frame:
+                        # No audio data available, wait for more
+                        await asyncio.sleep(0.1)
+                        continue
+
+                    audio_frames.append(frame)
                     self.audio_buffer.clear()
-                    rms = self._rms(audio_bytes)
-                    voice_detected = rms > self.volume_threshold
-                    
-                    # Convert to numpy array for return
-                    audio_array = np.frombuffer(audio_bytes, dtype=np.int16)
-                    audio_float = audio_array.astype(np.float32) / 32768.0
-                    
-                    _logger.debug(f"Timeout - returning {len(audio_float)} samples, RMS={rms:.6f}, voice_detected={voice_detected}")
-                    return audio_float, voice_detected
-            
+
+                    rms = self._rms(frame)
+                    if rms > self.volume_threshold:
+                        voice_detected = True
+                        silence_start = None
+                    else:
+                        if silence_start is None:
+                            silence_start = time.time()
+                        elif voice_detected and (time.time() - silence_start) > self.timeout:
+                            # End of speech detected
+                            break
+
+                    await asyncio.sleep(0.01)  # Small delay to prevent busy loop
+
+                except Exception as e:
+                    _logger.error(f"Error reading audio: {e}")
+                    break
+
+            if audio_frames:
+                audio_data = b''.join(audio_frames)
+                audio_array = np.frombuffer(audio_data, dtype=np.int16) / self._range
+                return audio_array, voice_detected
+            else:
+                return None, False
+
+        except Exception as e:
+            _logger.error(f"Error in listen_for_audio: {e}")
             return None, False
-                
+
         except Exception as e:
             _logger.error(f"Error in listen_for_audio: {e}")
             return None, False
