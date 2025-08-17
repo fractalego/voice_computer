@@ -11,17 +11,15 @@ import asyncio
 import logging
 import argparse
 import sys
-import signal
-import time
 import json
 import base64
 import websockets
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional
 
 from voice_computer.conversation_handler import ConversationHandler
 from voice_computer.listeners import WebSocketListener
-from voice_computer.server_tts_speaker import ServerTTSSpeaker
+from voice_computer.speaker.server_tts_speaker import ServerTTSSpeaker
 from voice_computer.config import load_config, create_example_config_file
 
 
@@ -238,12 +236,14 @@ async def run_websocket_server(host: str, port: int, config_path: Optional[str] 
         
         tts_speaker = ServerTTSSpeaker(websocket_send_callback, config=config)
         
-        # Create handler with server components using shared resources
-        handler = ConversationHandler(config, voice_listener=voice_listener, tts_speaker=tts_speaker)
-        
-        # Use pre-loaded shared MCP tools
-        handler.mcp_tools = shared_mcp_tools
-        handler.tool_handler = shared_tool_handler
+        # Create handler with server components using shared resources via factory method
+        handler = ConversationHandler.create_with_shared_tools(
+            config=config, 
+            voice_listener=voice_listener, 
+            tts_speaker=tts_speaker,
+            shared_mcp_tools=shared_mcp_tools,
+            shared_tool_handler=shared_tool_handler
+        )
         
         logger.debug(f"Client {client_id} using shared pre-loaded MCP tools")
         
