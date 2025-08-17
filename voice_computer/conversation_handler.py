@@ -1091,7 +1091,7 @@ class ConversationHandler:
 async def main():
     """Example usage."""
     # Create handler
-    handler = Handler()
+    handler = ConversationHandler()
     
     # Example: Add MCP servers (configure based on your setup)
     # handler.add_mcp_server("filesystem", "mcp-server-filesystem", ["--root", "/tmp"])

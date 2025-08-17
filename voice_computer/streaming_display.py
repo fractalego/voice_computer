@@ -108,7 +108,7 @@ class StreamingDisplay:
                     not is_numeric(token_batch[-1]) and 
                     not is_stopword(token_batch[-1]) and
                     (batch_text[-1].isspace() or batch_text[-1] in '.,!?;:')):
-                    await self.output_handler(batch_text)
+                    self.output_handler(batch_text)
                     token_batch.clear()
 
                     if not is_speaking and self.tts_speaker is not None:
@@ -124,7 +124,7 @@ class StreamingDisplay:
                 _logger.info("Timeout waiting for streaming display")
                 if token_batch:
                     batch_text = ''.join(token_batch)
-                    await self.output_handler(batch_text)
+                    self.output_handler(batch_text)
                     token_batch.clear()
                     
                 # Give other async tasks a chance to run
@@ -133,7 +133,7 @@ class StreamingDisplay:
         # Final safety flush - display any remaining tokens in the batch
         if token_batch:
             remaining_text = ''.join(token_batch)
-            await self.output_handler(remaining_text)
+            self.output_handler(remaining_text)
             token_batch.clear()
             _logger.debug(f"Final flush displayed remaining tokens: '{remaining_text}'")
 
@@ -223,7 +223,7 @@ class ColoredStreamingDisplay(StreamingDisplay):
             **kwargs
         )
     
-    async def _default_output_handler(self, text: str) -> None:
+    def _default_output_handler(self, text: str) -> None:
         """Colored output handler."""
         # Track clean text for accumulated_text (without colors/prefix)
         clean_text = text
@@ -242,8 +242,7 @@ class ColoredStreamingDisplay(StreamingDisplay):
             tts_text = text.replace(self.color_start, "").replace(self.color_end, "")
             tts_text = tts_text.replace(self.prefix, "")
             self.tts_speaker.add_text_batch(tts_text)
-            asyncio.sleep(tts_text.split() / 2)  # Simulate TTS delay based on text length
-        
+
         print(output, end='', flush=True)
 
     def _default_end_handler(self) -> None:

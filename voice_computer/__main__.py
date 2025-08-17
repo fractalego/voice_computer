@@ -221,7 +221,7 @@ async def run_websocket_server(host: str, port: int, config_path: Optional[str] 
     async def handle_client(websocket):
         """Handle a new client connection."""
         client_id = f"{websocket.remote_address[0]}:{websocket.remote_address[1]}"
-        logger.info(f"Client connected: {client_id}")
+        logger.info(f"🔗 New client connected: {client_id}")
         
         connected_clients.add(websocket)
         
@@ -247,13 +247,13 @@ async def run_websocket_server(host: str, port: int, config_path: Optional[str] 
             shared_entailer=shared_entailer
         )
         
-        logger.debug(f"Client {client_id} using shared pre-loaded MCP tools")
+        logger.info(f"🔧 Client {client_id} initialized with fresh session and shared MCP tools")
         
         try:
             # Send welcome message
             await websocket.send(json.dumps({
                 "type": "welcome",
-                "message": "Connected to Voice Computer Server",
+                "message": "Connected to Voice Computer Server - New session started",
                 "server_config": {
                     "streaming_enabled": True,
                     "available_tools": handler.get_available_tool_names()
@@ -320,11 +320,12 @@ async def run_websocket_server(host: str, port: int, config_path: Optional[str] 
                 task.cancel()
                     
         except websockets.exceptions.ConnectionClosed:
-            logger.info(f"Client disconnected: {client_id}")
+            logger.info(f"🔌 Client disconnected: {client_id}")
         except Exception as e:
-            logger.error(f"Error handling client {client_id}: {e}")
+            logger.error(f"💥 Error handling client {client_id}: {e}")
         finally:
             connected_clients.discard(websocket)
+            logger.info(f"🧹 Cleaned up session for client {client_id}")
             # No need to cleanup shared MCP connections here since they're shared
             # Only cleanup happens at server shutdown
     
