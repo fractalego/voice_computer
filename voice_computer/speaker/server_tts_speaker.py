@@ -164,11 +164,33 @@ class ServerTTSSpeaker(BaseSpeaker):
             if self.websocket_send_callback:
                 await self.websocket_send_callback(message)
                 _logger.debug(f"Sent TTS audio for text: '{text[:50]}{'...' if len(text) > 50 else ''}'")
+                
+                # Wait for estimated playback completion
+                await self._wait_for_estimated_playback(audio_data)
             else:
                 _logger.warning("No WebSocket callback available to send audio")
                 
         except Exception as e:
             _logger.error(f"Error sending audio over WebSocket: {e}")
+    
+    async def _wait_for_estimated_playback(self, audio_data):
+        """Wait based on estimated audio duration."""
+        try:
+            # Convert torch tensor to numpy if needed
+            if torch.is_tensor(audio_data):
+                audio_data = audio_data.cpu().float().numpy()
+            
+            # Calculate duration: samples / sample_rate
+            duration = len(audio_data) / self._sample_rate
+            # Add small buffer for processing and transmission
+            total_wait = duration + 0.2
+            
+            _logger.debug(f"Waiting {total_wait:.2f}s for estimated audio playback completion")
+            await asyncio.sleep(total_wait)
+            
+        except Exception as e:
+            _logger.debug(f"Error calculating playback duration, using default wait: {e}")
+            await asyncio.sleep(1.0)  # Default fallback wait
     
     def cancel_playback(self):
         """Cancel any ongoing audio synthesis/transmission."""
