@@ -165,7 +165,7 @@ class ServerTTSSpeaker(BaseSpeaker):
                 await self.websocket_send_callback(message)
                 _logger.debug(f"Sent TTS audio for text: '{text[:50]}{'...' if len(text) > 50 else ''}'")
                 
-                # Wait for estimated playback completion
+                # Schedule playback completion wait without blocking WebSocket or voice interruption
                 await self._wait_for_estimated_playback(audio_data)
             else:
                 _logger.warning("No WebSocket callback available to send audio")

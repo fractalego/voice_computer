@@ -56,18 +56,21 @@ class WebSocketListener(BaseListener):
             
         except Exception as e:
             _logger.error(f"Error adding audio chunk: {e}")
-    
-    
+
     async def throw_exception_on_voice_activity(self):
         """Monitor for voice activity and throw exception when detected."""
-        async with self.buffer_lock:
-            if not self.audio_buffer:
-                return
-            audio_bytes = bytes(self.audio_buffer[-self.chunk:])
-            rms = self._rms(audio_bytes)
-            if rms > self.volume_threshold:
-                _logger.debug(f"Voice activity detected with RMS={rms:.6f}, throwing exception")
-                raise VoiceInterruptionException("Voice activity detected in WebSocket audio buffer")
+        while True:
+            # Check for cancellation before acquiring lock
+            await asyncio.sleep(0)
+            async with self.buffer_lock:
+                if not self.audio_buffer:
+                    return
+                audio_bytes = bytes(self.audio_buffer[-self.chunk:])
+                rms = self._rms(audio_bytes)
+                if rms > self.volume_threshold:
+                    _logger.debug(f"Voice activity detected with RMS={rms:.6f}, throwing exception")
+                    raise VoiceInterruptionException("Voice activity detected in WebSocket audio buffer")
+            await asyncio.sleep(0.1)  # Check every 100ms
 
     
     async def transcribe_accumulated_audio(self) -> Optional[str]:
