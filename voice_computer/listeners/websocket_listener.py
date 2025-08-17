@@ -31,6 +31,7 @@ class WebSocketListener(BaseListener):
     def activate(self):
         """Activate the voice listener (no-op for server mode)."""
         self.is_active = True
+        self.audio_buffer.clear()
         _logger.debug("WebSocketListener activated")
     
     def deactivate(self):

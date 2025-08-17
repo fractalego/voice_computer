@@ -90,7 +90,7 @@ class StreamingDisplay:
                     # Display any remaining tokens
                     if token_batch:
                         remaining_text = ''.join(token_batch)
-                        await self.output_handler(remaining_text)
+                        self.output_handler(remaining_text)
                         token_batch.clear()
                     stream_complete = True
                     
@@ -112,11 +112,9 @@ class StreamingDisplay:
                     token_batch.clear()
 
                     if not is_speaking and self.tts_speaker is not None:
-                        # Start TTS speaker task if not already running
                         speaker_task = asyncio.create_task(self.tts_speaker.speak_batch())
                         is_speaking = True
                     
-                    # Give other async tasks a chance to run
                     await asyncio.sleep(0.05)
 
             except asyncio.TimeoutError:
@@ -153,6 +151,8 @@ class StreamingDisplay:
         _logger.debug("Streaming display completed")
         
         # Signal completion to client by throwing an exception
+        if self.tts_speaker:
+            await self.tts_speaker.speak_batch()
         raise StreamingCompletionException("Display stream completed")
 
 

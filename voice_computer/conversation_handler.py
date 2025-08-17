@@ -14,7 +14,7 @@ from voice_computer.mcp_connector import MCPStdioConnector
 from voice_computer.config import Config
 from voice_computer.streaming_display import (
     stream_colored_to_console_with_tts,
-    stream_colored_to_console
+    stream_colored_to_console, StreamingCompletionException
 )
 from voice_computer.speaker import TTSSpeaker
 from voice_computer.entailer import Entailer
@@ -750,6 +750,7 @@ class ConversationHandler:
                     _logger.debug("Prediction task completed successfully, getting result")
                     response = await prediction_task
                     return response.message
+
                 except Exception as e:
                     _logger.debug(f"Error getting result from prediction task: {e}")
                     # Treat as interrupted
