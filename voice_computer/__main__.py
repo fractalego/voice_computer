@@ -207,9 +207,10 @@ async def run_websocket_server(host: str, port: int, config_path: Optional[str] 
     logger.info("Initializing models...")
     temp_handler._initialize_models()
     
-    # Get the shared MCP tools
+    # Get the shared MCP tools and entailer
     shared_mcp_tools = temp_handler.mcp_tools
     shared_tool_handler = temp_handler.tool_handler
+    shared_entailer = temp_handler.entailer
     
     logger.info("Server initialization complete - ready to accept clients")
     
@@ -242,7 +243,8 @@ async def run_websocket_server(host: str, port: int, config_path: Optional[str] 
             voice_listener=voice_listener, 
             tts_speaker=tts_speaker,
             shared_mcp_tools=shared_mcp_tools,
-            shared_tool_handler=shared_tool_handler
+            shared_tool_handler=shared_tool_handler,
+            shared_entailer=shared_entailer
         )
         
         logger.debug(f"Client {client_id} using shared pre-loaded MCP tools")

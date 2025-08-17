@@ -14,7 +14,7 @@ from voice_computer.mcp_connector import MCPStdioConnector
 from voice_computer.config import Config
 from voice_computer.streaming_display import (
     stream_colored_to_console_with_tts,
-    stream_colored_to_console, StreamingCompletionException,
+    stream_colored_to_console
 )
 from voice_computer.speaker import TTSSpeaker
 from voice_computer.entailer import Entailer
@@ -73,11 +73,11 @@ class ConversationHandler:
     
     @classmethod
     def create_with_shared_tools(cls, config: Optional[Config] = None, voice_listener=None, tts_speaker=None, 
-                                shared_mcp_tools=None, shared_tool_handler=None):
+                                shared_mcp_tools=None, shared_tool_handler=None, shared_entailer=None):
         """
-        Factory method to create a ConversationHandler with pre-shared MCP tools.
+        Factory method to create a ConversationHandler with pre-shared MCP tools and entailer.
         
-        This prevents MCP tools from being reloaded for each client in server mode.
+        This prevents MCP tools and entailer models from being reloaded for each client in server mode.
         
         Args:
             config: Configuration object
@@ -85,11 +85,12 @@ class ConversationHandler:
             tts_speaker: TTS speaker instance (for server mode)
             shared_mcp_tools: Pre-initialized MCP tools to share
             shared_tool_handler: Pre-initialized tool handler to share
+            shared_entailer: Pre-initialized entailer to share
             
         Returns:
-            ConversationHandler with shared MCP tools assigned
+            ConversationHandler with shared MCP tools and entailer assigned
         """
-        # Create instance without triggering MCP setup
+        # Create instance without triggering MCP/entailer setup
         instance = cls.__new__(cls)
         instance._init_without_mcp_setup(config, voice_listener, tts_speaker)
         
@@ -98,8 +99,10 @@ class ConversationHandler:
             instance.mcp_tools = shared_mcp_tools
         if shared_tool_handler is not None:
             instance.tool_handler = shared_tool_handler
+        if shared_entailer is not None:
+            instance.entailer = shared_entailer
         
-        _logger.debug("Created ConversationHandler with shared MCP tools")
+        _logger.debug("Created ConversationHandler with shared MCP tools and entailer")
         return instance
     
     def _init_without_mcp_setup(self, config: Optional[Config] = None, voice_listener=None, tts_speaker=None):
@@ -127,9 +130,10 @@ class ConversationHandler:
             self.tts_speaker = None
             self.server_mode = False
         
-        # Initialize empty MCP tools and handler (will be assigned later)
+        # Initialize empty MCP tools, handler, and entailer (will be assigned later)
         self.mcp_tools = []
         self.tool_handler = None
+        self.entailer = None
         
         # Tool results queue (last 5 results)
         self.tool_results_queue = []
@@ -232,6 +236,11 @@ class ConversationHandler:
     
     async def _setup_mcp_tools(self) -> None:
         """Setup MCP tools asynchronously."""
+        # Skip setup if tools are already configured (e.g., from shared tools in server mode)
+        if self.tool_handler is not None:
+            _logger.debug("MCP tools already configured, skipping setup")
+            return
+            
         tools = []
         for connector in self.mcp_tools:
             try:
@@ -734,20 +743,6 @@ class ConversationHandler:
                     ## print stacktrace
                     import traceback
                     _logger.debug(traceback.format_exc())
-
-            # Check if any completed tasks had StreamingCompletionException and flush audio
-            for task in done:
-                if task.done() and not task.cancelled():
-                    try:
-                        task.result()
-                    except StreamingCompletionException as e:
-                        _logger.debug(f"Streaming completed, flushing remaining audio: {e}")
-                        try:
-                            await self.tts_speaker.speak_batch()
-                            _logger.debug("Successfully flushed remaining TTS audio after streaming completion")
-                        except Exception as flush_error:
-                            _logger.warning(f"Error flushing TTS audio: {flush_error}")
-                        continue
 
             # Get the result from the prediction task if it completed
             if prediction_task in done:
