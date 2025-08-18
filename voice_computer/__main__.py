@@ -229,12 +229,18 @@ async def run_websocket_server(host: str, port: int, config_path: Optional[str] 
         # Create client-specific voice listener (shares models with shared_voice_listener)
         voice_listener = WebSocketListener(config)
         
+        # Create WebSocket send lock to prevent message corruption
+        websocket_send_lock = asyncio.Lock()
+        
         # Create WebSocket callback for TTS
         async def websocket_send_callback(message_data):
             try:
-                await websocket.send(json.dumps(message_data))
+                json_str = json.dumps(message_data)
+                async with websocket_send_lock:
+                    await websocket.send(json_str)
             except Exception as e:
                 logger.error(f"Error sending message to client: {e}")
+                logger.error(f"Failed to serialize message_data: {repr(message_data)}")
         
         tts_speaker = ServerTTSSpeaker(websocket_send_callback, config=config)
         sound_speaker = ServerSoundFileSpeaker(websocket_send_callback)
@@ -254,24 +260,26 @@ async def run_websocket_server(host: str, port: int, config_path: Optional[str] 
         
         try:
             # Send welcome message
-            await websocket.send(json.dumps({
-                "type": "welcome",
-                "message": "Connected to Voice Computer Server - New session started",
-                "server_config": {
-                    "streaming_enabled": True,
-                    "available_tools": handler.get_available_tool_names()
-                }
-            }))
+            async with websocket_send_lock:
+                await websocket.send(json.dumps({
+                    "type": "welcome",
+                    "message": "Connected to Voice Computer Server - New session started",
+                    "server_config": {
+                        "streaming_enabled": True,
+                        "available_tools": handler.get_available_tool_names()
+                    }
+                }))
             
             # Test TTS by sending a connection sound
             connection_message = "Initializing. Please wait."
             logger.info(f"Sending connection test TTS: {connection_message}")
             
             # Send the text response first
-            await websocket.send(json.dumps({
-                "type": "text_response",
-                "text": connection_message
-            }))
+            async with websocket_send_lock:
+                await websocket.send(json.dumps({
+                    "type": "text_response",
+                    "text": connection_message
+                }))
             
             # Generate and send TTS audio
             try:
@@ -291,12 +299,13 @@ async def run_websocket_server(host: str, port: int, config_path: Optional[str] 
                             await handle_audio_chunk(websocket, handler, data)
                         elif message_type == "reset_conversation":
                             handler._reset_conversation_state()
-                            await websocket.send(json.dumps({
-                                "type": "conversation_reset",
-                                "message": "Conversation history cleared"
-                            }))
+                            async with websocket_send_lock:
+                                await websocket.send(json.dumps({
+                                    "type": "conversation_reset",
+                                    "message": "Conversation history cleared"
+                                }))
                         elif message_type == "get_status":
-                            await send_status(websocket, handler, len(connected_clients))
+                            await send_status(websocket, handler, len(connected_clients), websocket_send_lock)
                         else:
                             logger.warning(f"Unknown message type: {message_type}")
                             
@@ -344,7 +353,7 @@ async def run_websocket_server(host: str, port: int, config_path: Optional[str] 
         else:
             logger.debug("Received audio_chunk message but no audio_data field")
     
-    async def send_status(websocket, handler, client_count):
+    async def send_status(websocket, handler, client_count, websocket_send_lock):
         """Send server status information."""
         status = {
             "type": "status",
@@ -355,7 +364,8 @@ async def run_websocket_server(host: str, port: int, config_path: Optional[str] 
             "streaming_enabled": True,
             "connected_clients": client_count
         }
-        await websocket.send(json.dumps(status))
+        async with websocket_send_lock:
+            await websocket.send(json.dumps(status))
     
     try:
         # Start WebSocket server

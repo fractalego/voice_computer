@@ -192,8 +192,14 @@ class VoiceComputerClient:
         """Handle incoming messages from the server."""
         try:
             async for message in self.websocket:
-                data = json.loads(message)
-                await self._process_server_message(data)
+                try:
+                    data = json.loads(message)
+                    await self._process_server_message(data)
+                except json.JSONDecodeError as e:
+                    _logger.error(f"JSON decode error: {e}")
+                    _logger.error(f"Raw message received: {repr(message)}")
+                    # Continue to next message instead of crashing
+                    continue
         except websockets.exceptions.ConnectionClosed:
             _logger.info("🔌 Server connection closed")
             print("🔌 Connection to server lost")
