@@ -46,12 +46,12 @@ class VoiceInterface:
         if sound_speaker is not None:
             # Server mode - use provided sound speaker
             self._speaker = sound_speaker
-            _logger.debug("Using provided sound speaker (server mode)")
+            _logger.info(f"Using provided sound speaker (server mode): {type(sound_speaker).__name__}")
         else:
             # Local mode - initialize local sound speaker
             try:
                 self._speaker = SoundFileSpeaker()
-                _logger.debug("Local SoundFileSpeaker initialized successfully")
+                _logger.info("Local SoundFileSpeaker initialized successfully")
             except Exception as e:
                 _logger.warning(f"Failed to initialize local SoundFileSpeaker: {e}")
                 self._speaker = None
@@ -331,6 +331,8 @@ class VoiceInterface:
         """
         Play a specific sound file using the SoundFileSpeaker.
         """
+        _logger.info(f"_play_sound_file() called with: {sound_file_path}, speaker type: {type(self._speaker).__name__ if self._speaker else 'None'}")
+        
         if self._speaker is None:
             _logger.warning(f"Speaker not available, cannot play sound: {sound_file_path}")
             return
@@ -346,7 +348,7 @@ class VoiceInterface:
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(None, play_sound)
             
-            _logger.debug(f"Successfully played sound: {sound_file_path}")
+            _logger.info(f"Successfully played sound: {sound_file_path}")
             
         except Exception as e:
             _logger.error(f"Error playing sound file {sound_file_path}: {e}")

@@ -270,6 +270,22 @@ class VoiceComputerClient:
             # Handle TTS status messages
             status = data.get("status", "")
             print(f"🔊 TTS Status: {status}")
+            
+        elif message_type == "sound_file":
+            # Handle sound file playback from server
+            filename = data.get("filename", "")
+            audio_data = data.get("data", "")
+            sample_rate = data.get("sample_rate", 16000)
+            channels = data.get("channels", 1)
+            format_bytes = data.get("format", 2)
+            if audio_data:
+                print(f"🔊 Playing sound: {filename}")
+                await self._play_sound_file(audio_data, sample_rate, channels, format_bytes)
+                
+        elif message_type == "cancel_sound":
+            # Handle sound cancellation from server
+            print("🛑 Sound playback cancelled")
+            # TODO: Implement sound cancellation if needed
                 
         elif message_type == "start_listening":
             print("🎤 Server is listening...")
@@ -433,6 +449,44 @@ class VoiceComputerClient:
             _logger.error(f"Error playing TTS audio: {e}")
             # Fallback to local TTS with the text
             # Note: We don't have the text here, so this is just error handling
+            
+    async def _play_sound_file(self, encoded_audio: str, sample_rate: int, channels: int, format_bytes: int):
+        """Play sound file received from server."""
+        try:
+            # Decode base64 audio data
+            audio_bytes = base64.b64decode(encoded_audio)
+            
+            # Determine PyAudio format based on sample width
+            if format_bytes == 1:
+                pyaudio_format = pyaudio.paUInt8
+                dtype = np.uint8
+            elif format_bytes == 2:
+                pyaudio_format = pyaudio.paInt16
+                dtype = np.int16
+            elif format_bytes == 4:
+                pyaudio_format = pyaudio.paInt32
+                dtype = np.int32
+            else:
+                _logger.warning(f"Unsupported audio format: {format_bytes} bytes per sample")
+                return
+                
+            # Play using PyAudio
+            stream = self.audio_streamer.audio.open(
+                format=pyaudio_format,
+                channels=channels,
+                rate=sample_rate,
+                output=True
+            )
+            
+            # Play the audio directly
+            stream.write(audio_bytes)
+            
+            # Clean up
+            stream.stop_stream()
+            stream.close()
+            
+        except Exception as e:
+            _logger.error(f"Error playing sound file: {e}")
             
     async def run_interactive_mode(self):
         """Run interactive voice mode."""

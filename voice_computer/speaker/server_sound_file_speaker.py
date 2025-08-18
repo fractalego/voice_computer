@@ -25,7 +25,7 @@ class ServerSoundFileSpeaker(BaseSpeaker):
         """
         self.websocket_send_callback = websocket_send_callback
         self._initialized = False
-        _logger.debug("ServerSoundFileSpeaker initialized")
+        _logger.info("ServerSoundFileSpeaker initialized with callback: %s", websocket_send_callback is not None)
 
     def set_websocket_callback(self, callback: Callable[[dict], Any]) -> None:
         """
@@ -49,6 +49,8 @@ class ServerSoundFileSpeaker(BaseSpeaker):
         Args:
             filename: Path to the audio file to send
         """
+        _logger.info(f"ServerSoundFileSpeaker.speak() called with filename: {filename}")
+        
         if not self.websocket_send_callback:
             _logger.error("No websocket callback set for ServerSoundFileSpeaker")
             return
@@ -57,16 +59,27 @@ class ServerSoundFileSpeaker(BaseSpeaker):
             audio_data = self._read_audio_file(filename)
             
             # Send audio data via websocket
-            self.websocket_send_callback({
+            message = {
                 "type": "sound_file",
                 "filename": filename,
                 "data": audio_data["data"],
                 "format": audio_data["format"],
                 "sample_rate": audio_data["sample_rate"],
                 "channels": audio_data["channels"]
-            })
+            }
             
-            _logger.debug(f"Sent sound file data for {filename} via websocket")
+            # Handle async websocket callback
+            result = self.websocket_send_callback(message)
+            if asyncio.iscoroutine(result):
+                # Run in event loop if we have one, otherwise create a task
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(result)
+                except RuntimeError:
+                    # No running loop, run sync
+                    asyncio.run(result)
+            
+            _logger.info(f"Successfully sent sound file data for {filename} via websocket")
             
         except Exception as e:
             _logger.error(f"Failed to send sound file {filename}: {e}")
