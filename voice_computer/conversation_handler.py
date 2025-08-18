@@ -607,11 +607,11 @@ class ConversationHandler:
             # Extract arguments using the argument extractor and merge with defaults
             arguments = default_args.copy()  # Start with default arguments
             
-            if hasattr(self.tool_handler, 'argument_extractor') and self.tool_handler.argument_extractor:
+            if hasattr(self.tool_handler, 'extractor') and self.tool_handler.extractor:
                 conversation_history = self.conversation_history[-3:] if len(self.conversation_history) > 3 else self.conversation_history
                 facts = self.config.get_value("facts") or []
                 
-                extracted_args = await self.tool_handler.argument_extractor.extract_arguments(
+                extracted_args = await self.tool_handler.extractor.extract_arguments(
                     query, 
                     target_tool.name, 
                     target_tool.description,
@@ -622,6 +622,10 @@ class ConversationHandler:
                 
                 # Merge extracted args with defaults (extracted args take precedence)
                 arguments.update(extracted_args)
+            else:
+                _logger.warning(f"No argument extractor available for special sentence tool {server_name}.{tool_name}, cannot extract arguments from query")
+                if not default_args:
+                    _logger.error(f"Special sentence tool {server_name}.{tool_name} has no default_args and no argument extractor - tool call will likely fail")
             
             _logger.info(f"Executing special sentence tool {server_name}.{tool_name} with arguments: {arguments}")
             
