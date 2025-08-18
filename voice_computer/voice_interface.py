@@ -294,6 +294,10 @@ class VoiceInterface:
 
     async def _play_activation_sound(self) -> None:
         """Play activation sound."""
+        if not self._waking_up_sound:
+            _logger.debug("Activation sound disabled in configuration")
+            return
+            
         if self._activation_sound_path.exists():
             await self._play_sound_file(self._activation_sound_path)
         else:
@@ -301,6 +305,10 @@ class VoiceInterface:
 
     async def _play_deactivation_sound(self) -> None:
         """Play deactivation sound."""
+        if not self._deactivate_sound:
+            _logger.debug("Deactivation sound disabled in configuration")
+            return
+            
         if self._deactivation_sound_path.exists():
             await self._play_sound_file(self._deactivation_sound_path)
         else:
