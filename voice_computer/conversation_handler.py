@@ -765,30 +765,37 @@ class ConversationHandler:
         
         await self._setup_mcp_tools()
         self.voice_interface.activate()
-
         if self.tts_speaker:
             activation_text = "Please say the activation word to start the conversation."
             self.tts_speaker.speak(activation_text)
             _logger.info(activation_text)
 
-        try:
-            # Main loop: Handle voice activation cycles
-            while True:
+        while True:
+            try:
+                # Wait for hotword activation and handle conversation cycles
                 should_continue = await self._handle_voice_activation_cycle()
                 if not should_continue:
                     break
-                    
-        finally:
-            self.voice_interface.deactivate()
-            # Clean up TTS speaker
-            if hasattr(self, 'tts_speaker') and self.tts_speaker:
-                try:
-                    self.tts_speaker.cleanup()
-                except Exception as e:
-                    _logger.debug(f"Error cleaning up TTS speaker: {e}")
-            # Clean up MCP connections
-            await self._cleanup_mcp_connections()
-            _logger.info("Voice interaction loop ended")
+
+            except KeyboardInterrupt:
+                _logger.info("Voice loop interrupted by user")
+                break
+
+            except Exception as e:
+                _logger.error(f"Error in voice loop: {e}")
+                await self.voice_interface.output("Sorry, I encountered an error.")
+
+            finally:
+                self.voice_interface.deactivate()
+
+        if hasattr(self, 'tts_speaker') and self.tts_speaker:
+            try:
+                self.tts_speaker.cleanup()
+            except Exception as e:
+                _logger.debug(f"Error cleaning up TTS speaker: {e}")
+                
+        await self._cleanup_mcp_connections()
+        _logger.info("Voice interaction loop ended")
     
     async def run_text_loop(self) -> None:
         """Run in text-only mode for testing."""
