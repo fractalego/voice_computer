@@ -21,7 +21,7 @@ COLOR_GREEN = "\033[92m"   # Green
 class VoiceInterface:
     """Simplified voice interface for speech input and output."""
     
-    def __init__(self, config=None, voice_listener=None, tts_speaker=None):
+    def __init__(self, config=None, voice_listener=None, tts_speaker=None, sound_speaker=None):
         self.config = config
         self._is_listening = False
         self._bot_has_spoken = False
@@ -42,13 +42,19 @@ class VoiceInterface:
         self._computer_work_beep_path = sounds_dir / "computer_work_beep.wav"
         self._computer_starting_to_work_path = sounds_dir / "computer_starting_to_work.wav"
         
-        # Initialize sound file speaker
-        try:
-            self._speaker = SoundFileSpeaker()
-            _logger.debug("SoundFileSpeaker initialized successfully")
-        except Exception as e:
-            _logger.warning(f"Failed to initialize SoundFileSpeaker: {e}")
-            self._speaker = None
+        # Initialize sound file speaker - use provided one or create default
+        if sound_speaker is not None:
+            # Server mode - use provided sound speaker
+            self._speaker = sound_speaker
+            _logger.debug("Using provided sound speaker (server mode)")
+        else:
+            # Local mode - initialize local sound speaker
+            try:
+                self._speaker = SoundFileSpeaker()
+                _logger.debug("Local SoundFileSpeaker initialized successfully")
+            except Exception as e:
+                _logger.warning(f"Failed to initialize local SoundFileSpeaker: {e}")
+                self._speaker = None
         
         if config:
             self._waking_up_sound = config.get_value("waking_up_sound") or True

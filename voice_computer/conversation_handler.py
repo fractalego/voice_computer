@@ -16,7 +16,7 @@ from voice_computer.streaming_display import (
     stream_colored_to_console_with_tts,
     stream_colored_to_console, StreamingCompletionException
 )
-from voice_computer.speaker import TTSSpeaker
+from voice_computer.speaker import TTSSpeaker, ServerSoundFileSpeaker
 from voice_computer.entailer import Entailer
 from voice_computer.model_factory import get_model_factory
 from voice_computer.prompt import get_voice_assistant_system_prompt, format_tool_context
@@ -72,7 +72,7 @@ class ConversationHandler:
     """Main voice computer handler that coordinates all components."""
     
     @classmethod
-    def create_with_shared_tools(cls, config: Optional[Config] = None, voice_listener=None, tts_speaker=None, 
+    def create_with_shared_tools(cls, config: Optional[Config] = None, voice_listener=None, tts_speaker=None, sound_speaker=None,
                                 shared_mcp_tools=None, shared_tool_handler=None, shared_entailer=None):
         """
         Factory method to create a ConversationHandler with pre-shared MCP tools and entailer.
@@ -83,6 +83,7 @@ class ConversationHandler:
             config: Configuration object
             voice_listener: Voice listener instance (for server mode)
             tts_speaker: TTS speaker instance (for server mode)
+            sound_speaker: Sound file speaker instance (for server mode)
             shared_mcp_tools: Pre-initialized MCP tools to share
             shared_tool_handler: Pre-initialized tool handler to share
             shared_entailer: Pre-initialized entailer to share
@@ -92,7 +93,7 @@ class ConversationHandler:
         """
         # Create instance without triggering MCP/entailer setup
         instance = cls.__new__(cls)
-        instance._init_without_mcp_setup(config, voice_listener, tts_speaker)
+        instance._init_without_mcp_setup(config, voice_listener, tts_speaker, sound_speaker)
         
         # Assign shared MCP tools
         if shared_mcp_tools is not None:
@@ -105,7 +106,7 @@ class ConversationHandler:
         _logger.debug("Created ConversationHandler with shared MCP tools and entailer")
         return instance
     
-    def _init_without_mcp_setup(self, config: Optional[Config] = None, voice_listener=None, tts_speaker=None):
+    def _init_without_mcp_setup(self, config: Optional[Config] = None, voice_listener=None, tts_speaker=None, sound_speaker=None):
         """Initialize ConversationHandler without setting up MCP tools."""
         self.config = config or Config()
         
@@ -118,16 +119,18 @@ class ConversationHandler:
         
         # Initialize voice components - use provided ones or default to local
         if voice_listener is not None:
-            # Server mode - use provided listener and speaker
+            # Server mode - use provided listener and speakers
             self.voice_listener = voice_listener
             self.tts_speaker = tts_speaker
-            self.voice_interface = VoiceInterface(self.config, voice_listener=voice_listener, tts_speaker=tts_speaker)
+            self.sound_speaker = sound_speaker
+            self.voice_interface = VoiceInterface(self.config, voice_listener=voice_listener, tts_speaker=tts_speaker, sound_speaker=sound_speaker)
             self.server_mode = True
         else:
             # Local mode - use traditional voice interface
             self.voice_interface = VoiceInterface(self.config)
             self.voice_listener = None
             self.tts_speaker = None
+            self.sound_speaker = None
             self.server_mode = False
         
         # Initialize empty MCP tools, handler, and entailer (will be assigned later)
@@ -144,7 +147,7 @@ class ConversationHandler:
         # Conversation history (list of utterances)
         self.conversation_history = []
     
-    def __init__(self, config: Optional[Config] = None, voice_listener=None, tts_speaker=None):
+    def __init__(self, config: Optional[Config] = None, voice_listener=None, tts_speaker=None, sound_speaker=None):
         self.config = config or Config()
         
         # Initialize Ollama client using model factory
@@ -156,16 +159,18 @@ class ConversationHandler:
         
         # Initialize voice components - use provided ones or default to local
         if voice_listener is not None:
-            # Server mode - use provided listener and speaker
+            # Server mode - use provided listener and speakers
             self.voice_listener = voice_listener
             self.tts_speaker = tts_speaker
-            self.voice_interface = VoiceInterface(self.config, voice_listener=voice_listener, tts_speaker=tts_speaker)
+            self.sound_speaker = sound_speaker
+            self.voice_interface = VoiceInterface(self.config, voice_listener=voice_listener, tts_speaker=tts_speaker, sound_speaker=sound_speaker)
             self.server_mode = True
         else:
             # Local mode - use traditional voice interface
             self.voice_interface = VoiceInterface(self.config)
             self.voice_listener = None
             self.tts_speaker = None
+            self.sound_speaker = None
             self.server_mode = False
         
         # Initialize MCP tools and handler

@@ -4,6 +4,7 @@ Speaker module for audio output functionality.
 
 from voice_computer.speaker.base_speaker import BaseSpeaker
 from voice_computer.speaker.sound_file_speaker import SoundFileSpeaker
+from voice_computer.speaker.server_sound_file_speaker import ServerSoundFileSpeaker
 from voice_computer.speaker.tts_speaker import TTSSpeaker
 
-__all__ = ["BaseSpeaker", "SoundFileSpeaker", "TTSSpeaker"]
+__all__ = ["BaseSpeaker", "SoundFileSpeaker", "ServerSoundFileSpeaker", "TTSSpeaker"]
