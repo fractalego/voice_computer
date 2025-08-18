@@ -4,7 +4,7 @@ Main voice computer client that integrates all components.
 
 import asyncio
 import logging
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 
 from voice_computer.listeners.base_listener import VoiceInterruptionException
 from voice_computer.voice_interface import VoiceInterface
@@ -265,6 +265,62 @@ class ConversationHandler:
             _logger.info(f"ToolHandler initialized with {len(tools)} MCP tool groups")
         else:
             _logger.warning("No MCP tools available - running in basic mode")
+        
+        # Validate special sentences after MCP tools are loaded
+        await self._validate_special_sentences()
+    
+    async def _validate_special_sentences(self) -> None:
+        """
+        Validate that all special sentences reference existing MCP server tools.
+        Log warnings for any invalid tool references.
+        """
+        special_sentences = self.config.get_value("special_sentences") or {}
+        if not special_sentences:
+            return
+            
+        if not self.tool_handler:
+            _logger.warning("No tool handler available to validate special sentences")
+            return
+            
+        # Get all available tools
+        available_tools = {}
+        for mcp_tools in self.tool_handler.tools:
+            # Parse server name from server_description (e.g., "math" from "math")
+            server_name = mcp_tools.server_description
+            for tool in mcp_tools.tools:
+                tool_key = f"{server_name}.{tool.name}"
+                available_tools[tool_key] = True
+                # Also register just tool name as fallback
+                available_tools[tool.name] = True
+        
+        _logger.info(f"Validating {len(special_sentences)} special sentences against {len(available_tools)} available tools")
+        
+        # Validate each special sentence
+        invalid_sentences = []
+        for sentence, mcp_tool in special_sentences.items():
+            if "." not in mcp_tool:
+                _logger.warning(f"Special sentence '{sentence}' has invalid tool format '{mcp_tool}', expected SERVER.TOOL")
+                invalid_sentences.append(sentence)
+                continue
+                
+            server_name, tool_name = mcp_tool.split(".", 1)
+            tool_key = f"{server_name}.{tool_name}"
+            
+            # Check if exact match exists
+            if tool_key not in available_tools:
+                # Check if tool name exists in any server (fallback)
+                if tool_name in available_tools:
+                    _logger.warning(f"Special sentence '{sentence}' references '{mcp_tool}' but tool '{tool_name}' exists in a different server")
+                else:
+                    _logger.error(f"Special sentence '{sentence}' references non-existent tool '{mcp_tool}'")
+                    invalid_sentences.append(sentence)
+            else:
+                _logger.debug(f"Special sentence '{sentence}' -> {mcp_tool} [valid]")
+        
+        if invalid_sentences:
+            _logger.warning(f"Found {len(invalid_sentences)} invalid special sentence mappings. These will be ignored during processing.")
+        else:
+            _logger.info("All special sentences validated successfully")
     
     async def process_query(self, query: str, use_streaming: bool = True, use_colored_output: bool = True, use_tts: bool = False) -> str:
         """
@@ -299,12 +355,19 @@ class ConversationHandler:
             return response
         
         try:
-            # Update tool handler with current conversation history
-            if self.tool_handler:
-                self.tool_handler.update_conversation_history(self.conversation_history)
-            
-            # Execute relevant tools using the handler
-            tool_results, failed_tools = await self.tool_handler.handle_query(query)
+            # Check for special sentences first (bypasses normal tool selection)
+            special_tool = await self._check_special_sentences(query)
+            if special_tool:
+                server_name, tool_name = special_tool
+                # Handle special sentence with specific tool
+                tool_results, failed_tools = await self._handle_special_sentence_tool(server_name, tool_name, query)
+            else:
+                # Update tool handler with current conversation history
+                if self.tool_handler:
+                    self.tool_handler.update_conversation_history(self.conversation_history)
+                
+                # Execute relevant tools using the handler (normal flow)
+                tool_results, failed_tools = await self.tool_handler.handle_query(query)
             
             # Update tool results queue (keep only last 5)
             self.tool_results_queue.extend(tool_results)
@@ -403,6 +466,134 @@ class ConversationHandler:
                     _logger.info(f"Exit command detected via fallback keyword matching: '{keyword}' in '{user_input_clean}'")
                     return True
             return False
+    
+    async def _check_special_sentences(self, user_input: str) -> Optional[Tuple[str, str]]:
+        """
+        Check if user input matches any special sentences.
+        
+        Args:
+            user_input: The user's input text
+            
+        Returns:
+            Tuple of (server_name, tool_name) if match found, None otherwise.
+            Priority is based on order in special_sentences config (top to bottom).
+        """
+        if not user_input or not user_input.strip():
+            return None
+            
+        # Get configured special sentences
+        special_sentences = self.config.get_value("special_sentences") or {}
+        if not special_sentences:
+            return None
+            
+        # Convert to list preserving order for priority
+        sentences_list = list(special_sentences.keys())
+        user_input_clean = user_input.strip().lower()
+        
+        try:
+            # Check entailment against all special sentences at once
+            matching_indices = await self.entailer.judge_list(user_input_clean, sentences_list)
+            
+            if matching_indices:
+                # Use first match (highest priority) based on order in config
+                first_match_idx = min(matching_indices)  # Get the earliest index for priority
+                matched_sentence = sentences_list[first_match_idx]
+                mcp_tool = special_sentences[matched_sentence]
+                
+                # Parse server_name.tool_name
+                if "." not in mcp_tool:
+                    _logger.warning(f"Invalid MCP tool format '{mcp_tool}', expected SERVER.TOOL")
+                    return None
+                    
+                server_name, tool_name = mcp_tool.split(".", 1)
+                _logger.info(f"Special sentence detected: '{user_input_clean}' matches '{matched_sentence}' -> {server_name}.{tool_name}")
+                return (server_name, tool_name)
+            
+            return None
+            
+        except Exception as e:
+            _logger.error(f"Error checking special sentences with entailer: {e}")
+            return None
+    
+    async def _handle_special_sentence_tool(self, server_name: str, tool_name: str, query: str) -> Tuple[List[Any], List[str]]:
+        """
+        Handle a special sentence by directly calling the specified MCP tool.
+        
+        Args:
+            server_name: Name of the MCP server
+            tool_name: Name of the tool to call
+            query: Original user query for argument extraction
+            
+        Returns:
+            Tuple of (tool_results, failed_tools)
+        """
+        tool_results = []
+        failed_tools = []
+        
+        if not self.tool_handler:
+            _logger.error("No tool handler available for special sentence")
+            failed_tools.append(f"{server_name}.{tool_name}")
+            return tool_results, failed_tools
+        
+        try:
+            # Find the specific tool in the tool handler
+            target_tool = None
+            target_mcp_tools = None
+            
+            for mcp_tools in self.tool_handler.tools:
+                for tool in mcp_tools.tools:
+                    # Check if this tool matches server and tool name
+                    if (mcp_tools.server_description == server_name and tool.name == tool_name):
+                        target_tool = tool
+                        target_mcp_tools = mcp_tools
+                        break
+                    # Fallback: check if tool name matches (for any server)
+                    elif tool.name == tool_name:
+                        target_tool = tool
+                        target_mcp_tools = mcp_tools
+                        break
+                if target_tool:
+                    break
+            
+            if not target_tool:
+                _logger.warning(f"Special sentence tool not found: {server_name}.{tool_name}")
+                failed_tools.append(f"{server_name}.{tool_name}")
+                return tool_results, failed_tools
+            
+            # Extract arguments using the argument extractor
+            arguments = {}
+            if hasattr(self.tool_handler, 'argument_extractor') and self.tool_handler.argument_extractor:
+                conversation_history = self.conversation_history[-3:] if len(self.conversation_history) > 3 else self.conversation_history
+                facts = self.config.get_value("facts") or []
+                
+                arguments = await self.tool_handler.argument_extractor.extract_arguments(
+                    query, 
+                    target_tool.name, 
+                    target_tool.description,
+                    target_tool.inputSchema,
+                    conversation_history,
+                    facts
+                )
+            
+            _logger.info(f"Executing special sentence tool {server_name}.{tool_name} with arguments: {arguments}")
+            
+            # Execute the tool directly
+            result = await target_mcp_tools.call_tool(target_tool.name, arguments)
+            
+            tool_result = {
+                "tool_name": f"{server_name}.{tool_name}",
+                "result": result,
+                "arguments": arguments
+            }
+            tool_results.append(tool_result)
+            
+            _logger.info(f"Special sentence tool {server_name}.{tool_name} executed successfully")
+            
+        except Exception as e:
+            _logger.error(f"Error executing special sentence tool {server_name}.{tool_name}: {e}")
+            failed_tools.append(f"{server_name}.{tool_name}")
+        
+        return tool_results, failed_tools
     
     async def _handle_voice_activation_cycle(self) -> bool:
         """
@@ -1040,11 +1231,18 @@ class ConversationHandler:
                     # Play starting to work sound
                     await self.voice_interface.play_computer_starting_to_work()
                     
-                    # Update tool handler with current conversation history
-                    self.tool_handler.update_conversation_history(self.conversation_history)
-                    
-                    # Handle the query using tools
-                    tool_results, failed_tools = await self.tool_handler.handle_query(command)
+                    # Check for special sentences first (bypasses normal tool selection)
+                    special_tool = await self._check_special_sentences(command)
+                    if special_tool:
+                        server_name, tool_name = special_tool
+                        # Handle special sentence with specific tool
+                        tool_results, failed_tools = await self._handle_special_sentence_tool(server_name, tool_name, command)
+                    else:
+                        # Update tool handler with current conversation history
+                        self.tool_handler.update_conversation_history(self.conversation_history)
+                        
+                        # Handle the query using tools (normal flow)
+                        tool_results, failed_tools = await self.tool_handler.handle_query(command)
                     
                     # Update tool results queues
                     self.tool_results_queue.extend(tool_results)

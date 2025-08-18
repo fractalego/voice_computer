@@ -114,6 +114,22 @@ class Config:
             # Tool results queue configuration
             "tool_results_queue_length": 2,  # Maximum number of tool results to keep in queue
             
+            # Special sentences configuration - maps sentences to specific MCP server tools
+            "special_sentences": {
+                "what time is it": "time.current_time",
+                "what's the time": "time.current_time", 
+                "tell me the time": "time.current_time",
+                "what's the weather like": "weather.get_current_weather",
+                "check the weather": "weather.get_current_weather",
+                "how's the weather": "weather.get_current_weather",
+                "what's the weather": "weather.get_current_weather",
+                "what day is it": "time.current_day_of_week",
+                "what's the date": "time.current_date",
+                "london transport status": "tfl.get_transport_status",
+                "tfl status": "tfl.get_transport_status",
+                "tube status": "tfl.get_tube_status"
+            },
+            
             # Constant listening mode configuration
             "constant_listening": {
                 "enabled": False,                   # Enable constant listening mode
@@ -291,6 +307,20 @@ def create_example_config_file(path: str) -> None:
             "You can check London transport status using TFL tools"
         ],
         "tool_results_queue_length": 2,
+        "special_sentences": {
+            "what time is it": "time.current_time",
+            "what's the time": "time.current_time", 
+            "tell me the time": "time.current_time",
+            "what's the weather like": "weather.get_current_weather",
+            "check the weather": "weather.get_current_weather",
+            "how's the weather": "weather.get_current_weather",
+            "what's the weather": "weather.get_current_weather",
+            "what day is it": "time.current_day_of_week",
+            "what's the date": "time.current_date",
+            "london transport status": "tfl.get_transport_status",
+            "tfl status": "tfl.get_transport_status",
+            "tube status": "tfl.get_tube_status"
+        },
         "constant_listening": {
             "enabled": False,
             "command_timeout": 10.0,
