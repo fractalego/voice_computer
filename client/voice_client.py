@@ -441,7 +441,9 @@ class VoiceComputerClient:
                 format=pyaudio.paFloat32,
                 channels=1,
                 rate=sample_rate,
-                output=True
+                output=True,
+                output_device_index=None,
+                frames_per_buffer=1024
             )
             
             # Play the audio
@@ -481,7 +483,9 @@ class VoiceComputerClient:
                 format=pyaudio_format,
                 channels=channels,
                 rate=sample_rate,
-                output=True
+                output=True,
+                output_device_index=None,
+                frames_per_buffer=1024
             )
             
             # Play the audio directly
