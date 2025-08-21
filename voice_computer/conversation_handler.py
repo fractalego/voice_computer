@@ -956,20 +956,7 @@ class ConversationHandler:
 
             # Create a wrapper for the listening task that cancels other tasks immediately
             async def listening_with_cancellation():
-                try:
-                    await self.voice_interface.throw_exception_on_voice_activity()
-                except VoiceInterruptionException as e:
-                    # Cancel other tasks immediately when voice interruption occurs
-                    _logger.info(f"Voice activity detected in {'server' if self.server_mode else 'local'} mode, cancelling prediction and display tasks")
-                    _logger.debug(f"Voice activity details: {e}")
-                    _logger.debug(f"Prediction task status: {prediction_task.done() if prediction_task else 'None'}")
-                    _logger.debug(f"Display task status: {display_task.done() if display_task else 'None'}")
-                    prediction_task.cancel()
-                    display_task.cancel()
-                    # Cancel TTS playback if active
-                    if self.tts_speaker:
-                        self.tts_speaker.cancel_playback()
-                    raise e
+                await self.voice_interface.throw_exception_on_voice_activity()
             
             listening_task = asyncio.create_task(listening_with_cancellation())
             task_list = [prediction_task, display_task, listening_task]
@@ -978,11 +965,26 @@ class ConversationHandler:
             # Wait for the first exception (voice interruption) or all tasks to complete
             done, pending = await asyncio.wait(
                 task_list,
-                return_when=asyncio.FIRST_EXCEPTION if not self.server_mode else asyncio.ALL_COMPLETED
+                return_when=asyncio.FIRST_EXCEPTION
             )
             ## logs the status of the tasks
             _logger.debug(f"Tasks done: {[task.get_name() for task in done]}")
             _logger.debug(f"Tasks pending: {[task.get_name() for task in pending]}")
+
+            # Check if listening task completed with voice interruption exception
+            if listening_task in done:
+                try:
+                    await listening_task  # This will re-raise the VoiceInterruptionException if it occurred
+                except VoiceInterruptionException as e:
+                    _logger.info(f"Voice activity detected in {'server' if self.server_mode else 'local'} mode, cancelling prediction and display tasks")
+                    _logger.debug(f"Voice activity details: {e}")
+                    if self.tts_speaker:
+                        self.tts_speaker.cancel_playback()
+                    if self.voice_interface:
+                        await self.voice_interface.play_deny_sound()
+
+                except Exception as e:
+                    _logger.debug(f"Listening task completed with unexpected exception: {e}")
 
             # Cancel all pending tasks
             for task in pending:
@@ -995,9 +997,6 @@ class ConversationHandler:
                     pass
                 except Exception as e:
                     _logger.debug(f"Task {task.get_name()} raised exception during cancellation: {e}")
-                    ## print stacktrace
-                    import traceback
-                    _logger.debug(traceback.format_exc())
 
             # Get the result from the prediction task if it completed
             if prediction_task in done:

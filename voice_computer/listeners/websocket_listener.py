@@ -79,7 +79,8 @@ class WebSocketListener(BaseListener):
             await asyncio.sleep(0)
             async with self.buffer_lock:
                 if not self.audio_buffer:
-                    return
+                    await asyncio.sleep(0.1)
+                    continue
                 for offset in range(0, len(self.audio_buffer), self.chunk):
                     # This is inefficient but works for small buffers
                     # TODO: only process new chunks

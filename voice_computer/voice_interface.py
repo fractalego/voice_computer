@@ -314,13 +314,6 @@ class VoiceInterface:
         else:
             _logger.warning("Deactivation sound file not found")
 
-    async def _play_deny_sound(self) -> None:
-        """Play deny/error sound."""
-        if self._deny_sound_path.exists():
-            await self._play_sound_file(self._deny_sound_path)
-        else:
-            _logger.warning("Deny sound file not found")
-
     async def play_computer_work_beep(self) -> None:
         """Play computer work beep sound when tools are being executed."""
         if self._computer_work_beep_path.exists():
@@ -334,6 +327,14 @@ class VoiceInterface:
             await self._play_sound_file(self._computer_starting_to_work_path)
         else:
             _logger.warning("Computer starting to work sound file not found")
+
+    async def play_deny_sound(self) -> None:
+        """Play sound indicating the bot cannot process the request."""
+        _logger.info("Playing deny sound")
+        if self._deny_sound_path.exists():
+            await self._play_sound_file(self._deny_sound_path)
+        else:
+            _logger.warning("Deny sound file not found")
 
     async def _play_sound_file(self, sound_file_path: Path) -> None:
         """
