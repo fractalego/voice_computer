@@ -501,7 +501,7 @@ class VoiceComputerClient:
     async def run_interactive_mode(self):
         """Run interactive voice mode."""
         print("\n🎙️  Voice mode activated!")
-        print("🎤 Audio streaming is active - say 'computer' followed by your command")
+        print("🎤 Audio streaming is active - say the activation word followed by your command")
         print("📝 Type 'q' to quit, 's' for status, 'r' to reset")
         
         self.conversation_active = True
@@ -509,7 +509,7 @@ class VoiceComputerClient:
         try:
             # Start audio streaming immediately
             await self.start_audio_streaming()
-            print("🔊 Microphone is live - listening for 'computer' activation word...")
+            print("🔊 Microphone is live - listening for the activation word...")
             
             # Simple control loop - just wait for user commands while audio streams
             while self.conversation_active and self.connected:

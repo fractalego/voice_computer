@@ -106,62 +106,7 @@ class MicrophoneListener(BaseListener):
                 _logger.debug("MicrophoneListener audio stream deactivated")
             except Exception as e:
                 _logger.error(f"Error deactivating audio stream: {e}")
-    
-    async def listen_for_audio(self, timeout_seconds: float = None) -> Tuple[Optional[np.ndarray], bool]:
-        """
-        Listen for audio input from microphone.
-        
-        Args:
-            timeout_seconds: Maximum time to listen
-            
-        Returns:
-            Tuple of (audio_data, voice_detected)
-        """
-        if not self.is_active:
-            self.activate()
-        
-        if timeout_seconds is None:
-            timeout_seconds = self.timeout
-        
-        try:
-            audio_frames = []
-            start_time = time.time()
-            last_spoken = None
-            voice_detected = False
-            while time.time() - start_time < timeout_seconds:
-                try:
-                    frame = self.stream.read(self.chunk, exception_on_overflow=False)
-                    rms = self._rms(frame)
-                    if rms > self.volume_threshold:
-                        last_spoken = time.time()
-                        voice_detected = True
-                        audio_frames.append(frame)
-                    else:
-                        if last_spoken is not None and (time.time() - last_spoken) > self.timeout:
-                            # End of speech detected
-                            break
-                        elif last_spoken is not None:
-                            # Still within timeout, keep collecting frames
-                            audio_frames.append(frame)
 
-                    await asyncio.sleep(0.01)  # Small delay to prevent busy loop
-                    
-                except Exception as e:
-                    _logger.error(f"Error reading audio: {e}")
-                    break
-            
-            if audio_frames:
-                # Convert audio frames to numpy array
-                audio_data = b''.join(audio_frames)
-                audio_array = np.frombuffer(audio_data, dtype=np.int16) / self._range
-                return audio_array, voice_detected
-            else:
-                return None, False
-                
-        except Exception as e:
-            _logger.error(f"Error in listen_for_audio: {e}")
-            return None, False
-    
     async def throw_exception_on_voice_activity(self):
         """Monitor for voice activity and throw exception when detected."""
         if not self.is_active:
@@ -181,8 +126,10 @@ class MicrophoneListener(BaseListener):
         except Exception as e:
             # Re-raise the exception to signal voice activity
             raise e
-    
-    
+
+    def _get_input(self) -> bytes:
+        return self.stream.read(self.chunk, exception_on_overflow=False)
+
     def __del__(self):
         """Cleanup on deletion."""
         try:

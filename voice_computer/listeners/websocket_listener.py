@@ -54,25 +54,6 @@ class WebSocketListener(BaseListener):
             
         except Exception as e:
             _logger.error(f"Error adding audio chunk: {e}")
-
-    async def throw_exception_on_voice_activity(self):
-        """Monitor for voice activity and throw exception when detected."""
-        while True:
-            await asyncio.sleep(0)
-            async with self.buffer_lock:
-                if not self.audio_buffer:
-                    return
-                chunks = _chunks(self.audio_buffer, self.chunk)
-                for chunk in chunks:
-                    # This is inefficient but works for small buffers
-                    # TODO: only process new chunks
-                    await asyncio.sleep(0.01)
-                    rms = self._rms(chunk)
-                    if rms > self.volume_threshold:
-                        _logger.debug(f"Voice activity detected with RMS={rms:.6f}, throwing exception")
-                        raise VoiceInterruptionException("Voice activity detected in WebSocket audio buffer")
-            await asyncio.sleep(0.1)
-
     
     async def transcribe_accumulated_audio(self) -> Optional[str]:
         """
@@ -91,71 +72,28 @@ class WebSocketListener(BaseListener):
         
         # Transcribe using base class method
         return await self.transcribe_audio(audio_data)
-    
-    async def listen_for_audio(self, timeout_seconds: float = None) -> Tuple[Optional[np.ndarray], bool]:
-        """
-        Listen for audio input from WebSocket buffer.
-        Similar to MicrophoneListener but uses buffered audio from WebSocket instead of microphone.
-        
-        Args:
-            timeout_seconds: Maximum time to listen
-            
-        Returns:
-            Tuple of (audio_data, voice_detected)
-        """
 
-        if not self.is_active:
-            self.activate()
-
-        if timeout_seconds is None:
-            timeout_seconds = self.timeout
-
-        try:
-            audio_frames = []
-            start_time = time.time()
-            last_spoken = None
-            voice_detected = False
-            while time.time() - start_time < timeout_seconds:
-                try:
-                    frame = bytes(self.audio_buffer)
-                    if not frame:
-                        # No audio data available, wait for more
-                        await asyncio.sleep(0.1)
-                        continue
-                    self.audio_buffer.clear()
-                    rms = self._rms(frame)
+    async def throw_exception_on_voice_activity(self):
+        """Monitor for voice activity and throw exception when detected."""
+        while True:
+            await asyncio.sleep(0)
+            async with self.buffer_lock:
+                if not self.audio_buffer:
+                    return
+                for offset in range(0, len(self.audio_buffer), self.chunk):
+                    # This is inefficient but works for small buffers
+                    # TODO: only process new chunks
+                    await asyncio.sleep(0.01)
+                    rms = self._rms(bytes(self.audio_buffer[offset:offset + self.chunk]))
                     if rms > self.volume_threshold:
-                        last_spoken = time.time()
-                        voice_detected = True
-                        audio_frames.append(frame)
-                    else:
-                        if last_spoken is not None and (time.time() - last_spoken) > self.timeout:
-                            # End of speech detected
-                            break
-                        elif last_spoken is not None:
-                            # Still within timeout, keep collecting frames
-                            audio_frames.append(frame)
+                        _logger.debug(f"Voice activity detected with RMS={rms:.6f}, throwing exception")
+                        raise VoiceInterruptionException("Voice activity detected in WebSocket audio buffer")
+            await asyncio.sleep(0.1)
 
-                    await asyncio.sleep(0.01)  # Small delay to prevent busy loop
-
-                except Exception as e:
-                    _logger.error(f"Error reading audio: {e}")
-                    break
-
-            if audio_frames:
-                audio_data = b''.join(audio_frames)
-                audio_array = np.frombuffer(audio_data, dtype=np.int16) / self._range
-                return audio_array, voice_detected
-            else:
-                return None, False
-
-        except Exception as e:
-            _logger.error(f"Error in listen_for_audio: {e}")
-            return None, False
-
-        except Exception as e:
-            _logger.error(f"Error in listen_for_audio: {e}")
-            return None, False
+    def _get_input(self) -> bytes:
+        frame = bytes(self.audio_buffer)
+        self.audio_buffer.clear()
+        return frame
 
 
 def _chunks(lst, n):

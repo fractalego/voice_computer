@@ -18,7 +18,7 @@ class Config:
         return {
             # Voice interface settings
             "listener_model": {
-                "listener_silence_timeout": 0.5,      # seconds of silence before stopping recording
+                "listener_silence_timeout": 1.5,      # seconds of silence before stopping recording
                 "listener_volume_threshold": 0.6,   # minimum volume to trigger recording
                 "listener_hotword_logp": -8,        # hotword detection threshold
                 "microphone_device_index": None     # specific microphone device index (None for default)

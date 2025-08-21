@@ -1,8 +1,10 @@
 """
 Base listener class with common functionality for all voice listeners.
 """
-
+import asyncio
 import logging
+import time
+
 import numpy as np
 import torch
 from abc import ABC, abstractmethod
@@ -40,7 +42,7 @@ class BaseListener(ABC):
         # Load configuration
         if config:
             listener_config = config.get_value("listener_model") or {}
-            self.timeout = listener_config.get("listener_silence_timeout", 0.5)
+            self.timeout = listener_config.get("listener_silence_timeout", 2)
             self.volume_threshold = listener_config.get("listener_volume_threshold", 0.6)
             self.original_volume_threshold = self.volume_threshold
             self.hotword_threshold = listener_config.get("listener_hotword_logp", -8)
@@ -219,7 +221,76 @@ class BaseListener(ABC):
         except Exception as e:
             _logger.error(f"Error during transcription: {e}")
             return None
-    
+
+    async def listen_for_audio(self, timeout_seconds: float = None) -> Tuple[Optional[np.ndarray], bool]:
+        """
+        Listen for audio input from WebSocket buffer.
+        Similar to MicrophoneListener but uses buffered audio from WebSocket instead of microphone.
+
+        Args:
+            timeout_seconds: Maximum time to listen
+
+        Returns:
+            Tuple of (audio_data, voice_detected)
+        """
+
+        if not self.is_active:
+            self.activate()
+
+        if timeout_seconds is None:
+            timeout_seconds = self.timeout * 20
+
+        try:
+            audio_frames = []
+            last_spoken = None
+            voice_detected = False
+            start_time = None
+            while True:
+                if start_time is not None:
+                    elapsed = time.time() - start_time
+                    if elapsed > timeout_seconds:
+                        _logger.debug("Timeout reached, stopping audio collection")
+                        break
+                try:
+                    await asyncio.sleep(0.1)
+                    frame = self._get_input()
+                    if not frame:
+                        continue
+                    self.audio_buffer.clear()
+                    rms = self._rms(frame)
+                    if rms > self.volume_threshold:
+                        last_spoken = time.time()
+                        voice_detected = True
+                        audio_frames.append(frame)
+                    else:
+                        if last_spoken is not None and (time.time() - last_spoken) > self.timeout:
+                            _logger.debug("No voice activity detected for timeout period, stopping audio collection")
+                            break
+                        elif last_spoken is not None:
+                            # Still within timeout, keep collecting frames
+                            audio_frames.append(frame)
+
+                    await asyncio.sleep(0.01)  # Small delay to prevent busy loop
+
+                except Exception as e:
+                    _logger.error(f"Error reading audio: {e}")
+                    break
+
+            if audio_frames:
+                audio_data = b''.join(audio_frames)
+                audio_array = np.frombuffer(audio_data, dtype=np.int16) / self._range
+                return audio_array, voice_detected
+            else:
+                return None, False
+
+        except Exception as e:
+            _logger.error(f"Error in listen_for_audio: {e}")
+            return None, False
+
+        except Exception as e:
+            _logger.error(f"Error in listen_for_audio: {e}")
+            return None, False
+
     # Abstract methods that must be implemented by subclasses
     @abstractmethod
     def activate(self):
@@ -232,21 +303,13 @@ class BaseListener(ABC):
         pass
     
     @abstractmethod
-    async def listen_for_audio(self, timeout_seconds: float = None) -> Tuple[Optional[np.ndarray], bool]:
-        """
-        Listen for audio input.
-        
-        Args:
-            timeout_seconds: Maximum time to listen
-            
-        Returns:
-            Tuple of (audio_data, voice_detected)
-        """
-        pass
-    
-    @abstractmethod
     async def throw_exception_on_voice_activity(self):
         """Monitor for voice activity and throw exception when detected."""
+        pass
+
+    @abstractmethod
+    def _get_input(self) -> bytes:
+        """Get raw audio input data."""
         pass
     
     async def input(self) -> str:
