@@ -147,7 +147,7 @@ ALL THE TESTS ARE NOW IN THE `tests/` DIRECTORY
 ```json
 {
   "listener_model": {
-    "listener_silence_timeout": 2,
+    "listener_silence_timeout": 0.5,
     "listener_volume_threshold": 0.6,
     "listener_hotword_logp": -8
   },

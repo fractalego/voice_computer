@@ -40,7 +40,7 @@ class BaseListener(ABC):
         # Load configuration
         if config:
             listener_config = config.get_value("listener_model") or {}
-            self.timeout = listener_config.get("listener_silence_timeout", 2)
+            self.timeout = listener_config.get("listener_silence_timeout", 0.5)
             self.volume_threshold = listener_config.get("listener_volume_threshold", 0.6)
             self.original_volume_threshold = self.volume_threshold
             self.hotword_threshold = listener_config.get("listener_hotword_logp", -8)

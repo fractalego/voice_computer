@@ -126,27 +126,24 @@ class MicrophoneListener(BaseListener):
         try:
             audio_frames = []
             start_time = time.time()
-            silence_start = None
+            last_spoken = None
             voice_detected = False
-            
             while time.time() - start_time < timeout_seconds:
                 try:
-                    # Read audio chunk
                     frame = self.stream.read(self.chunk, exception_on_overflow=False)
-                    audio_frames.append(frame)
-                    
-                    # Check voice activity
                     rms = self._rms(frame)
                     if rms > self.volume_threshold:
+                        last_spoken = time.time()
                         voice_detected = True
-                        silence_start = None
+                        audio_frames.append(frame)
                     else:
-                        if silence_start is None:
-                            silence_start = time.time()
-                        elif voice_detected and (time.time() - silence_start) > self.timeout:
+                        if last_spoken is not None and (time.time() - last_spoken) > self.timeout:
                             # End of speech detected
                             break
-                    
+                        elif last_spoken is not None:
+                            # Still within timeout, keep collecting frames
+                            audio_frames.append(frame)
+
                     await asyncio.sleep(0.01)  # Small delay to prevent busy loop
                     
                 except Exception as e:
