@@ -84,6 +84,8 @@ async def get_weather_forecast(location: str, days: int = 3) -> str:
     """
     try:
         # Limit days to valid range
+        if days is None:
+            days = 3
         days = max(1, min(10, days))
         
         data = await make_weather_request("forecast.json", {"q": location, "days": days})
