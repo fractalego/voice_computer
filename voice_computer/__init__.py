@@ -6,7 +6,7 @@ speech recognition, text-to-speech, and MCP (Model Context Protocol) tools
 with Ollama for intelligent responses.
 """
 
-from voice_computer.conversation_handler import ConversationHandler
+from voice_computer.conversation import Conversation
 from voice_computer.voice_interface import VoiceInterface
 from voice_computer.listeners import MicrophoneListener
 from voice_computer.client import OllamaClient, HFClient
@@ -19,7 +19,7 @@ from voice_computer.model_factory import get_model_factory, ModelFactory
 
 __version__ = "1.0.0"
 __all__ = [
-    "ConversationHandler",
+    "Conversation",
     "VoiceInterface", 
     "MicrophoneListener",
     "OllamaClient",

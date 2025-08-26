@@ -18,7 +18,7 @@ import copy
 from pathlib import Path
 from typing import Optional
 
-from voice_computer.conversation_handler import ConversationHandler
+from voice_computer.conversation import Conversation
 from voice_computer.listeners import WebSocketListener
 from voice_computer.speaker.server_tts_speaker import ServerTTSSpeaker
 from voice_computer.speaker.server_sound_file_speaker import ServerSoundFileSpeaker
@@ -200,7 +200,7 @@ async def run_websocket_server(host: str, port: int, config_path: Optional[str] 
     logger.info("Pre-loading models and MCP tools...")
     
     # Create a temporary handler to initialize shared resources
-    temp_handler = ConversationHandler(config)
+    temp_handler = Conversation(config)
     
     # Setup MCP tools
     logger.info("Setting up MCP tools...")
@@ -276,7 +276,7 @@ async def run_websocket_server(host: str, port: int, config_path: Optional[str] 
         sound_speaker = ServerSoundFileSpeaker(websocket_send_callback)
         
         # Create handler with server components using shared resources via factory method
-        handler = ConversationHandler.create_with_shared_tools(
+        handler = Conversation.create_with_shared_tools(
             config=config, 
             voice_listener=voice_listener, 
             tts_speaker=tts_speaker,
@@ -483,7 +483,7 @@ async def main():
             await run_websocket_server(args.host, args.port, args.config, args.verbose)
         else:
             # Create handler only for local modes
-            handler = ConversationHandler(config)
+            handler = Conversation(config)
             
             # Add example MCP servers if none configured
             mcp_servers = config.get_value("mcp_servers") or []
