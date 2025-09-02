@@ -981,7 +981,9 @@ class Conversation:
                     if self.tts_speaker:
                         self.tts_speaker.cancel_playback()
                     if self.voice_interface:
-                        self.tts_speaker.speak("Say again?")
+                        await self.voice_interface.play_deny_sound()
+                        await asyncio.sleep(0.05)
+                        self.tts_speaker.speak("Stopping.")
 
                 except Exception as e:
                     _logger.debug(f"Listening task completed with unexpected exception: {e}")

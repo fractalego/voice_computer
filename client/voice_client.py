@@ -95,7 +95,7 @@ class AudioStreamer:
 class VoiceComputerClient:
     """Client that connects to a remote voice computer server."""
     
-    def __init__(self, server_uri: str = "ws://localhost:8765", auto_reconnect: bool = True, reconnect_interval: float = 5.0):
+    def __init__(self, server_uri: str = "ws://localhost:8765", auto_reconnect: bool = True, reconnect_interval: float = 60.0):
         self.server_uri = server_uri
         self.websocket = None
         self.connected = False
@@ -591,7 +591,7 @@ async def main():
     parser.add_argument("--text", action="store_true", help="Run in text mode instead of voice mode")
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
     parser.add_argument("--no-reconnect", action="store_true", help="Disable auto-reconnection")
-    parser.add_argument("--reconnect-interval", type=float, default=5.0, help="Reconnection interval in seconds (default: 5.0)")
+    parser.add_argument("--reconnect-interval", type=float, default=60.0, help="Reconnection interval in seconds (default: 60)")
     
     args = parser.parse_args()
     

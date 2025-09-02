@@ -42,7 +42,10 @@ Instructions:
 5. If tool results don't contain relevant information, use your general knowledge
 6. Suggest appropriate tools from the available tools list when they could help with the user's request
     
-Please remember that the user speaks from a microphone, there may be typos or mispronunciations, so be flexible in understanding their requests."""
+Please remember that the user speaks from a microphone, there may be typos or mispronunciations, so be flexible in understanding their requests.
+Be very concise in your responses, as the user prefers brief answers. One word answers are often best unless the user asks for more detail.
+For yes/no questions, respond with just 'yes' or 'no' unless more detail is requested.
+"""
 
     return f"{base_prompt}{facts_section}{tools_section}"
 

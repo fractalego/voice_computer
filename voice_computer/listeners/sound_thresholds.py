@@ -10,7 +10,7 @@ import logging
 import numpy as np
 
 _logger = logging.getLogger(__name__)
-
+_threshold_sensitivity_constant = 4 * 1024 # Constant to adjust sensitivity found empirically
 
 
 def calculate_rms(frame: bytes) -> float:
@@ -27,8 +27,7 @@ def calculate_rms(frame: bytes) -> float:
     audio_data = np.frombuffer(frame, dtype=np.int16)
     if len(audio_data) == 0:
         return 0.0
-
-    rms = np.std(audio_data) / len(audio_data)
+    rms = np.std(audio_data) / _threshold_sensitivity_constant
 
     # Handle NaN or infinite values
     if not np.isfinite(rms):

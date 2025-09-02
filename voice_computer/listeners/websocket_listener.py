@@ -80,18 +80,12 @@ class WebSocketListener(BaseListener):
                 if not self.audio_buffer:
                     await asyncio.sleep(0.1)
                     continue
-                ### get rms from first chunk only
-                sliding_window_size = self.chunk * 16
-                current_threshold = self._rms(bytes(self.audio_buffer[0:sliding_window_size]))
-                for offset in range(0, len(self.audio_buffer), sliding_window_size):
-                    # This is inefficient but works for small buffers
-                    # TODO: only process new chunks
-                    await asyncio.sleep(0.01)
-                    rms = self._rms(bytes(self.audio_buffer[offset:offset + sliding_window_size]))
-                    print(rms)
-                    if rms > current_threshold * 3 and rms > self.volume_threshold:
-                        _logger.debug(f"Voice activity detected with RMS={rms:.6f}, throwing exception")
-                        raise VoiceInterruptionException("Voice activity detected in WebSocket audio buffer")
+                rms: float = self._rms(bytes(self.audio_buffer))
+                if rms > self.volume_threshold:
+                    _logger.debug(f"Detected RMS: {rms}")
+                    self.audio_buffer.clear()
+                    raise VoiceInterruptionException(f"Voice activity detected in WebSocket audio buffer")
+                self.audio_buffer.clear()
             await asyncio.sleep(0.1)
 
     def _get_input(self) -> bytes:
