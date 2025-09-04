@@ -92,6 +92,11 @@ class StreamingDisplay:
                         remaining_text = ''.join(token_batch)
                         self.output_handler(remaining_text)
                         token_batch.clear()
+
+                        if not is_speaking and self.tts_speaker is not None:
+                            speaker_task = asyncio.create_task(self.tts_speaker.speak_batch())
+                            is_speaking = True
+
                     stream_complete = True
                     
                     # Call end handler
