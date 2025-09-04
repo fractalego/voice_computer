@@ -4,10 +4,7 @@ Microphone-based speech recognition using local microphone input with Whisper.
 
 import asyncio
 import logging
-import numpy as np
 import pyaudio
-import time
-from typing import Optional, List, Tuple
 
 from .base_listener import BaseListener, VoiceInterruptionException
 

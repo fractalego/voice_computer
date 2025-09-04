@@ -258,7 +258,7 @@ class BaseListener(ABC):
                         continue
                     self.audio_buffer.clear()
                     rms = self._rms(frame)
-                    if rms > self.volume_threshold or voice_detected:
+                    if rms > self.volume_threshold:
                         last_spoken = time.time()
                         voice_detected = True
                         audio_frames.append(frame)
