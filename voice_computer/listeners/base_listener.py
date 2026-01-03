@@ -294,18 +294,40 @@ class BaseListener(ABC):
             best_logp = float('-inf')
             best_position = -1
 
+            # Decode hotword tokens for logging
+            hotword_token_strs = [self.processor.tokenizer.decode([int(t)]) for t in hotword_tokens[0]]
+            _logger.info(f"compute_logp: Sliding hotword tokens {hotword_tokens[0].tolist()} ({hotword_token_strs}) over {num_generated} generated tokens")
+
+            # Log generated tokens with their decoded strings
+            generated_token_strs = [self.processor.tokenizer.decode([t]) for t in generated_tokens]
+            _logger.info(f"compute_logp: Generated tokens: {list(zip(generated_tokens, generated_token_strs))}")
+
             # Slide window: check positions 0 to (num_generated - hotword_len)
+            window_scores = []
             for start_pos in range(num_generated - hotword_len + 1):
                 sum_logp = 0.0
+                token_scores = []
                 for i, token_id in enumerate(hotword_tokens[0]):
                     pos = start_pos + i
-                    sum_logp += all_logprobs[pos][0, int(token_id)].item()
+                    token_logp = all_logprobs[pos][0, int(token_id)].item()
+                    token_scores.append(token_logp)
+                    sum_logp += token_logp
+
+                # Show what generated token is at this position vs what hotword token we're checking
+                gen_at_pos = generated_tokens[start_pos:start_pos + hotword_len]
+                gen_at_pos_strs = [self.processor.tokenizer.decode([t]) for t in gen_at_pos]
+                window_scores.append((start_pos, sum_logp, gen_at_pos, gen_at_pos_strs, token_scores))
 
                 if sum_logp > best_logp:
                     best_logp = sum_logp
                     best_position = start_pos
 
-            _logger.debug(f"compute_logp: Best match at position {best_position} with logp {best_logp:.2f}")
+            # Log all window scores
+            for pos, score, gen_tokens, gen_strs, token_scores in window_scores:
+                match_indicator = " <-- BEST" if pos == best_position else ""
+                _logger.info(f"  Position {pos}: score={score:.2f} | generated={gen_strs} vs hotword={hotword_token_strs} | per-token={[f'{s:.2f}' for s in token_scores]}{match_indicator}")
+
+            _logger.info(f"compute_logp: Best match at position {best_position} with logp {best_logp:.2f}")
 
         return best_logp, best_position, generated_tokens
 
