@@ -102,7 +102,10 @@ class Conversation:
             instance.tool_handler = shared_tool_handler
         if shared_entailer is not None:
             instance.entailer = shared_entailer
-        
+
+        # Initialize models (including Whisper) - this ensures they're loaded at startup
+        instance._initialize_models()
+
         _logger.debug("Created Conversation with shared MCP tools and entailer")
         return instance
     
@@ -1045,8 +1048,9 @@ class Conversation:
                 self.tts_speaker.initialize()
             else:
                 _logger.warning("TTSSpeaker is not initialized, TTS functionality will be disabled.")
-        
-        self.entailer.initialize()
+
+        if hasattr(self, 'entailer') and self.entailer:
+            self.entailer.initialize()
     
     # Server mode specific methods
     async def add_audio_chunk(self, audio_data: bytes):

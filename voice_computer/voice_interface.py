@@ -143,33 +143,45 @@ class VoiceInterface:
     async def _wait_for_hotword(self) -> tuple[str, str]:
         """
         Wait in a loop until a hotword is detected.
-        Uses continuous audio monitoring with hotword detection.
-        
+        Uses logp-based hotword detection on raw audio for more robust detection.
+
         Returns:
             Tuple of (detected_hotword, instruction_text)
             If instruction found with hotword, returns both
             If only hotword found, returns (hotword, "")
         """
-        _logger.debug("Starting hotword detection loop...")
-        
+        _logger.debug("Starting hotword detection loop (logp-based)...")
+
         while True:
-            # Listen for audio that might contain hotword
-            text = await self._listener.input()
-            if not text or not text.strip() or text.strip() == "[unclear]":
+            # Listen for audio (get raw audio data)
+            audio_data, voice_detected = await self._listener.listen_for_audio()
+
+            if not voice_detected or audio_data is None:
+                await asyncio.sleep(0.1)
                 continue
-            
-            _logger.debug(f"Transcribed audio for hotword check: '{text}'")
-            
-            # Check if any configured hotword appears with potential instruction
-            detected_hotword, instruction = self._check_hotword_with_instruction(text)
+
+            # Try logp-based hotword detection first (with sliding window)
+            detected_hotword, logp_score, instruction = await self._listener.detect_hotword_by_logp(audio_data)
+
             if detected_hotword:
-                _logger.info(f"Hotword '{detected_hotword}' detected in transcription!")
+                _logger.info(f"Hotword '{detected_hotword}' detected via logp (score: {logp_score:.2f})")
                 if instruction:
-                    _logger.info(f"Instruction detected with hotword: '{instruction}'")
-                return (detected_hotword, instruction)
-            
-            # If no hotword detected, continue listening
-            _logger.debug(f"No hotword detected in: '{text}', continuing to listen...")
+                    _logger.info(f"Instruction extracted from logp: '{instruction}'")
+                return (detected_hotword, instruction or "")
+
+            # Fallback: try text-based detection if logp didn't detect
+            text = await self._listener.transcribe_audio(audio_data)
+            if text and text.strip() and text.strip() != "[unclear]":
+                _logger.debug(f"Transcribed audio for fallback hotword check: '{text}'")
+                detected_hotword, instruction = self._check_hotword_with_instruction(text)
+                if detected_hotword:
+                    _logger.info(f"Hotword '{detected_hotword}' detected via text fallback")
+                    if instruction:
+                        _logger.info(f"Instruction detected with hotword: '{instruction}'")
+                    return (detected_hotword, instruction)
+
+                _logger.debug(f"No hotword detected in: '{text}', continuing to listen...")
+
             await asyncio.sleep(0.1)  # Small delay before next listen cycle
     
     def _check_hotword_in_text(self, text: str) -> str:

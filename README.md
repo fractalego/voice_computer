@@ -688,12 +688,6 @@ print('Testing HF client...')
 # This will test without actually loading a large model
 "
 
-# Test TTS (Linux)
-espeak "Hello world"
-
-# Test TTS (macOS)
-say "Hello world"
-
 # Run with verbose logging
 python run_voice_computer.py --verbose
 ```

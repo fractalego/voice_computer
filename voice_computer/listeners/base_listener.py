@@ -97,7 +97,13 @@ class BaseListener(ABC):
             # Load model and processor using model factory
             model_factory = get_model_factory()
             self.processor, self.model, self.device = model_factory.get_whisper_model(self.whisper_model_name, self.device)
-            
+
+            # Initialize special tokens for logp computation
+            self._initialize_special_tokens()
+
+            # Warmup inference with dummy audio to pre-compile torch operations
+            self._warmup_inference()
+
             self.initialized = True
             _logger.info("Whisper model initialized successfully using model factory")
             
@@ -109,9 +115,291 @@ class BaseListener(ABC):
         """Calculate RMS of audio data."""
         if len(frame) == 0:
             return 0.0
-        
+
         return calculate_rms(frame)
-    
+
+    def _warmup_inference(self) -> None:
+        """
+        Run a dummy inference to pre-compile torch operations.
+        This ensures the first real inference is fast.
+        """
+        _logger.info("Running warmup inference...")
+        try:
+            # Create 1 second of silent audio at 16kHz
+            dummy_audio = np.zeros(self.rate, dtype=np.float32)
+
+            # Warmup the transcription path (uses .generate())
+            inputs = self.processor(
+                dummy_audio,
+                sampling_rate=self.rate,
+                return_tensors="pt"
+            )
+            input_features = inputs.input_features.to(self.device)
+
+            if self.device.type == 'cuda':
+                model_dtype = next(self.model.parameters()).dtype
+                input_features = input_features.to(dtype=model_dtype)
+
+            with torch.no_grad():
+                # Warmup generate path
+                _ = self.model.generate(
+                    input_features,
+                    max_length=10,
+                    num_beams=1,
+                    do_sample=False
+                )
+
+                # Warmup forward pass path (used by compute_logp)
+                input_ids = torch.tensor([self._starting_tokens], dtype=torch.long).to(self.device)
+                _ = self.model(input_features, decoder_input_ids=input_ids)
+
+            _logger.info("Warmup inference completed successfully")
+
+        except Exception as e:
+            _logger.warning(f"Warmup inference failed (non-fatal): {e}")
+
+    def _initialize_special_tokens(self) -> None:
+        """Initialize starting and ending tokens from the Whisper tokenizer."""
+        try:
+            tokenizer = self.processor.tokenizer
+
+            # Get special token IDs
+            # Starting tokens: typically <|startoftranscript|> and language/task tokens
+            start_of_transcript = tokenizer.convert_tokens_to_ids("<|startoftranscript|>")
+
+            # For English transcription, we use <|en|> and <|transcribe|>
+            en_token = tokenizer.convert_tokens_to_ids("<|en|>")
+            transcribe_token = tokenizer.convert_tokens_to_ids("<|transcribe|>")
+            notimestamps_token = tokenizer.convert_tokens_to_ids("<|notimestamps|>")
+
+            # Build starting tokens sequence
+            self._starting_tokens = [start_of_transcript]
+            if en_token is not None and en_token != tokenizer.unk_token_id:
+                self._starting_tokens.append(en_token)
+            if transcribe_token is not None and transcribe_token != tokenizer.unk_token_id:
+                self._starting_tokens.append(transcribe_token)
+            if notimestamps_token is not None and notimestamps_token != tokenizer.unk_token_id:
+                self._starting_tokens.append(notimestamps_token)
+
+            # Ending tokens: <|endoftext|> or <|endoftranscript|>
+            end_of_text = tokenizer.convert_tokens_to_ids("<|endoftext|>")
+            end_of_transcript = tokenizer.convert_tokens_to_ids("<|endoftranscript|>")
+
+            self._ending_tokens = []
+            if end_of_text is not None and end_of_text != tokenizer.unk_token_id:
+                self._ending_tokens.append(end_of_text)
+            if end_of_transcript is not None and end_of_transcript != tokenizer.unk_token_id:
+                self._ending_tokens.append(end_of_transcript)
+
+            _logger.info(f"Initialized special tokens - starting: {self._starting_tokens}, ending: {self._ending_tokens}")
+
+        except Exception as e:
+            _logger.warning(f"Failed to initialize special tokens: {e}. Using empty lists.")
+            self._starting_tokens = []
+            self._ending_tokens = []
+
+    def _tokenize_hotword(self, hotword: str) -> torch.Tensor:
+        """
+        Tokenize a hotword, removing special tokens.
+
+        Args:
+            hotword: The hotword string to tokenize
+
+        Returns:
+            Tensor of token IDs for the hotword
+        """
+        # Encode with leading space (common for subword tokenizers)
+        all_tokens = self.processor.tokenizer.encode(f" {hotword}")
+
+        # Filter out ALL special tokens (not just starting/ending)
+        special_tokens = set(self.processor.tokenizer.all_special_ids)
+        hotword_tokens = [t for t in all_tokens if t not in special_tokens]
+
+        _logger.debug(f"Tokenized '{hotword}': raw={all_tokens}, filtered={hotword_tokens}")
+
+        return torch.tensor(hotword_tokens, dtype=torch.long).unsqueeze(0)
+
+    def compute_logp(self, hotword_tokens: torch.Tensor, input_features: torch.Tensor, max_generate_steps: int = 20) -> Tuple[float, int, List[int]]:
+        """
+        Compute the log probability of a hotword using sliding window matching.
+
+        This runs the Whisper decoder autoregressively to generate tokens,
+        then slides the hotword tokens over the generated sequence to find
+        the best matching position.
+
+        Args:
+            hotword_tokens: Tensor of shape (1, K) with hotword token IDs
+            input_features: Tensor of audio features from the processor
+            max_generate_steps: Maximum number of tokens to generate
+
+        Returns:
+            Tuple of (best_logp, best_position, all_generated_tokens)
+            - best_logp: Best sum of log probabilities for the hotword
+            - best_position: Position in generated tokens where hotword best matches
+            - all_generated_tokens: All tokens generated from the audio
+        """
+        if not self.initialized or self.model is None:
+            raise RuntimeError("Model not initialized. Call initialize() first.")
+
+        # Start with the starting tokens
+        input_ids = torch.tensor([self._starting_tokens], dtype=torch.long).to(self.device)
+
+        # Get model dtype for consistency
+        model_dtype = next(self.model.parameters()).dtype
+        input_features = input_features.to(device=self.device, dtype=model_dtype)
+
+        hotword_len = hotword_tokens.shape[1]
+        eos_token_id = self.processor.tokenizer.eos_token_id
+
+        # Get all special token IDs
+        special_token_ids = set(self.processor.tokenizer.all_special_ids)
+
+        with torch.no_grad():
+            generated_tokens = []
+            all_logprobs = []
+
+            for step in range(max_generate_steps):
+                outputs = self.model(
+                    input_features,
+                    decoder_input_ids=input_ids,
+                )
+                logits = outputs.logits
+
+                # Store logprobs for the last position (predicting next token)
+                step_logprobs = torch.log_softmax(logits[:, -1, :], dim=-1)
+                all_logprobs.append(step_logprobs)
+
+                # Greedy decoding: pick the most likely next token
+                new_token = torch.argmax(logits[:, -1, :], dim=-1, keepdim=True)
+                token_id = new_token.item()
+                generated_tokens.append(token_id)
+
+                input_ids = torch.cat([input_ids, new_token], dim=-1)
+
+                # Stop if we hit EOS token
+                if token_id == eos_token_id:
+                    break
+
+            _logger.debug(f"compute_logp: Generated {len(generated_tokens)} tokens: {generated_tokens}")
+            _logger.debug(f"compute_logp: Decoded: '{self.processor.tokenizer.decode(generated_tokens)}'")
+
+            # Now slide the hotword window over the generated sequence
+            # all_logprobs[i] contains the logprobs for predicting token at position i
+            num_generated = len(generated_tokens)
+
+            if num_generated < hotword_len:
+                _logger.debug(f"compute_logp: Not enough tokens generated ({num_generated} < {hotword_len})")
+                return float('-inf'), -1, generated_tokens
+
+            best_logp = float('-inf')
+            best_position = -1
+
+            # Slide window: check positions 0 to (num_generated - hotword_len)
+            for start_pos in range(num_generated - hotword_len + 1):
+                sum_logp = 0.0
+                for i, token_id in enumerate(hotword_tokens[0]):
+                    pos = start_pos + i
+                    sum_logp += all_logprobs[pos][0, int(token_id)].item()
+
+                if sum_logp > best_logp:
+                    best_logp = sum_logp
+                    best_position = start_pos
+
+            _logger.debug(f"compute_logp: Best match at position {best_position} with logp {best_logp:.2f}")
+
+        return best_logp, best_position, generated_tokens
+
+    async def detect_hotword_by_logp(self, audio_data: np.ndarray) -> Tuple[Optional[str], float, Optional[str]]:
+        """
+        Detect hotword using sliding window log probability scoring.
+
+        This method generates tokens from the audio, slides the hotword tokens
+        over the generated sequence to find the best match, and extracts the
+        instruction (tokens after the hotword).
+
+        Args:
+            audio_data: Audio data as numpy array (float, normalized)
+
+        Returns:
+            Tuple of (detected_hotword, logp_score, instruction)
+            - detected_hotword: The hotword if detected, None otherwise
+            - logp_score: The best logp score
+            - instruction: Text after the hotword (if hotword detected), None otherwise
+        """
+        if not self.initialized:
+            self.initialize()
+
+        if not self.hotwords:
+            return None, 0.0, None
+
+        try:
+            # Process audio to get input features
+            inputs = self.processor(
+                audio_data,
+                sampling_rate=self.rate,
+                return_tensors="pt"
+            )
+            input_features = inputs.input_features.to(self.device)
+
+            # Ensure dtype matches model
+            if self.device.type == 'cuda':
+                model_dtype = next(self.model.parameters()).dtype
+                input_features = input_features.to(dtype=model_dtype)
+
+            best_hotword = None
+            best_logp = float('-inf')
+            best_position = -1
+            best_generated_tokens = []
+            best_hotword_len = 0
+
+            # Check each hotword
+            for hotword in self.hotwords:
+                hotword_tokens = self._tokenize_hotword(hotword)
+                _logger.debug(f"Hotword '{hotword}' tokenized to: {hotword_tokens.tolist()}")
+
+                logp, position, generated_tokens = self.compute_logp(hotword_tokens, input_features)
+
+                _logger.debug(f"Hotword '{hotword}' logp: {logp:.2f} at position {position} (threshold: {self.hotword_threshold})")
+
+                if logp > best_logp:
+                    best_logp = logp
+                    best_hotword = hotword
+                    best_position = position
+                    best_generated_tokens = generated_tokens
+                    best_hotword_len = hotword_tokens.shape[1]
+
+            # Check if best match exceeds threshold
+            if best_logp >= self.hotword_threshold:
+                # Extract instruction: tokens after the hotword
+                instruction_start = best_position + best_hotword_len
+                instruction_tokens = best_generated_tokens[instruction_start:]
+
+                # Filter out special tokens from instruction
+                special_token_ids = set(self.processor.tokenizer.all_special_ids)
+                instruction_tokens = [t for t in instruction_tokens if t not in special_token_ids]
+
+                instruction = None
+                if instruction_tokens:
+                    instruction = self.processor.tokenizer.decode(instruction_tokens).strip()
+                    # Filter out meaningless instructions (punctuation only, very short, etc.)
+                    if instruction and len(instruction) > 1 and not all(c in '.,!?;:\'"' for c in instruction):
+                        _logger.info(f"Hotword detected by logp: '{best_hotword}' with score {best_logp:.2f}, instruction: '{instruction}'")
+                    else:
+                        _logger.debug(f"Filtered out meaningless instruction: '{instruction}'")
+                        instruction = None
+                        _logger.info(f"Hotword detected by logp: '{best_hotword}' with score {best_logp:.2f}, no instruction")
+                else:
+                    _logger.info(f"Hotword detected by logp: '{best_hotword}' with score {best_logp:.2f}, no instruction")
+
+                return best_hotword, best_logp, instruction
+            else:
+                _logger.info(f"Hotword NOT detected by logp. Best: '{best_hotword}' with score {best_logp:.2f} (threshold: {self.hotword_threshold})")
+                return None, best_logp, None
+
+        except Exception as e:
+            _logger.error(f"Error in detect_hotword_by_logp: {e}")
+            return None, 0.0, None
+
     async def detect_activation_words(self, text: str) -> Optional[str]:
         """
         Check if text contains any activation words.
@@ -256,7 +544,6 @@ class BaseListener(ABC):
                     frame = self._get_input()
                     if not frame:
                         continue
-                    self.audio_buffer.clear()
                     rms = self._rms(frame)
                     if rms > self.volume_threshold:
                         last_spoken = time.time()
@@ -278,7 +565,7 @@ class BaseListener(ABC):
 
             if audio_frames:
                 audio_data = b''.join(audio_frames)
-                audio_array = np.frombuffer(audio_data, dtype=np.int16) / self._range
+                audio_array = np.frombuffer(audio_data, dtype=np.int16) / self.range
                 return audio_array, voice_detected
             else:
                 return None, False
