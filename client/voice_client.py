@@ -120,16 +120,33 @@ class VoiceComputerClient:
     async def connect(self):
         """Connect to the voice computer server."""
         try:
+            # Clean up any existing websocket before reconnecting
+            if self.websocket is not None:
+                try:
+                    await asyncio.wait_for(self.websocket.close(), timeout=2.0)
+                except Exception:
+                    pass  # Ignore errors when closing stale connection
+                self.websocket = None
+
             _logger.info(f"Connecting to {self.server_uri}")
-            self.websocket = await websockets.connect(self.server_uri)
+            # Use explicit timeout to avoid hanging connections
+            # open_timeout controls the handshake timeout specifically
+            self.websocket = await websockets.connect(
+                self.server_uri,
+                open_timeout=10,
+                ping_interval=20,
+                ping_timeout=10,
+                close_timeout=5
+            )
             self.connected = True
             _logger.info("Connected to voice computer server")
-            
+
             # Start message handler
             asyncio.create_task(self._message_handler())
-            
+
         except Exception as e:
             _logger.error(f"Failed to connect to server: {e}")
+            self.websocket = None
             raise
             
     async def _attempt_reconnect(self):
@@ -400,13 +417,21 @@ class VoiceComputerClient:
                         _logger.warning(f"Connection lost during audio streaming: {e}")
                         self.connected = False
                         break
-                    
+
                 await asyncio.sleep(0.01)  # Small delay to prevent busy loop
-                
+
+            # Reset streaming state when loop exits due to connection loss
+            # This ensures start_audio_streaming() will work on reconnection
+            if not self.connected and self.streaming_audio:
+                _logger.info("Resetting audio streaming state after connection loss")
+                self.streaming_audio = False
+                self.audio_streamer.stop_streaming()
+
         except asyncio.CancelledError:
             pass
         except Exception as e:
             _logger.error(f"Error in audio streaming loop: {e}")
+            self.streaming_audio = False
             
     async def send_start_listening(self):
         """Tell server to start listening for voice commands."""
@@ -503,25 +528,31 @@ class VoiceComputerClient:
         print("\n🎙️  Voice mode activated!")
         print("🎤 Audio streaming is active - say the activation word followed by your command")
         print("📝 Type 'q' to quit, 's' for status, 'r' to reset")
-        
+
         self.conversation_active = True
-        
+
         try:
             # Start audio streaming immediately
             await self.start_audio_streaming()
             print("🔊 Microphone is live - listening for the activation word...")
-            
+
             # Simple control loop - just wait for user commands while audio streams
-            while self.conversation_active and self.connected:
+            # Keep running while conversation is active (even if temporarily disconnected)
+            while self.conversation_active and not self.shutdown_requested:
                 try:
+                    # If disconnected, wait for reconnection
+                    if not self.connected:
+                        await asyncio.sleep(0.5)
+                        continue
+
                     # Use asyncio to handle input without blocking
                     user_input = await asyncio.wait_for(
-                        asyncio.to_thread(input, ""), 
+                        asyncio.to_thread(input, ""),
                         timeout=1.0
                     )
-                    
+
                     user_input = user_input.strip().lower()
-                    
+
                     if user_input == 'q' or user_input == 'quit':
                         break
                     elif user_input == 's' or user_input == 'status':
@@ -532,13 +563,13 @@ class VoiceComputerClient:
                     elif user_input:
                         # Send text directly
                         await self.send_text_query(user_input)
-                        
+
                 except asyncio.TimeoutError:
                     # No input, continue listening
                     pass
                 except EOFError:
                     break
-                    
+
         except KeyboardInterrupt:
             print("\n🛑 Voice mode interrupted by user")
         finally:

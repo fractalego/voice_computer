@@ -353,10 +353,16 @@ async def run_websocket_server(host: str, port: int, config_path: Optional[str] 
                 [message_task, conversation_task],
                 return_when=asyncio.FIRST_COMPLETED
             )
-            
-            # Cancel any remaining tasks
+
+            # Cancel any remaining tasks and await their completion
             for task in pending:
                 task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    logger.debug(f"Task {task.get_name()} cancelled successfully")
+                except Exception as e:
+                    logger.debug(f"Task {task.get_name()} raised {e} during cancellation")
                     
         except websockets.exceptions.ConnectionClosed:
             logger.info(f"🔌 Client disconnected: {client_id}")

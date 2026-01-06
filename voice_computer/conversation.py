@@ -777,6 +777,10 @@ class Conversation:
                 if not should_continue:
                     break
 
+            except asyncio.CancelledError:
+                _logger.info("Voice loop cancelled (client disconnected)")
+                raise  # Re-raise to properly propagate cancellation
+
             except KeyboardInterrupt:
                 _logger.info("Voice loop interrupted by user")
                 break
