@@ -318,28 +318,34 @@ async def run_websocket_server(host: str, port: int, config_path: Optional[str] 
             
             # Create WebSocket message handler for the voice listener
             async def websocket_message_handler():
-                async for message in websocket:
-                    try:
-                        data = json.loads(message)
-                        message_type = data.get("type")
-                        
-                        if message_type == "audio_chunk":
-                            await handle_audio_chunk(websocket, handler, data)
-                        elif message_type == "reset_conversation":
-                            handler._reset_conversation_state()
-                            await message_queue.put({
-                                "type": "conversation_reset",
-                                "message": "Conversation history cleared"
-                            })
-                        elif message_type == "get_status":
-                            await send_status(message_queue, handler, len(connected_clients))
-                        else:
-                            logger.warning(f"Unknown message type: {message_type}")
-                            
-                    except json.JSONDecodeError:
-                        logger.error("Invalid JSON format from client")
-                    except Exception as e:
-                        logger.error(f"Error processing message from {client_id}: {e}")
+                try:
+                    async for message in websocket:
+                        try:
+                            data = json.loads(message)
+                            message_type = data.get("type")
+
+                            if message_type == "audio_chunk":
+                                await handle_audio_chunk(websocket, handler, data)
+                            elif message_type == "reset_conversation":
+                                handler._reset_conversation_state()
+                                await message_queue.put({
+                                    "type": "conversation_reset",
+                                    "message": "Conversation history cleared"
+                                })
+                            elif message_type == "get_status":
+                                await send_status(message_queue, handler, len(connected_clients))
+                            else:
+                                logger.warning(f"Unknown message type: {message_type}")
+
+                        except json.JSONDecodeError:
+                            logger.error("Invalid JSON format from client")
+                        except Exception as e:
+                            logger.error(f"Error processing message from {client_id}: {e}")
+                except websockets.exceptions.ConnectionClosed as e:
+                    logger.info(f"WebSocket closed for {client_id}: {e}")
+                except asyncio.CancelledError:
+                    logger.debug(f"Message handler cancelled for {client_id}")
+                    raise  # Re-raise to allow proper task cancellation
             
             # Start the message handler task
             message_task = asyncio.create_task(websocket_message_handler())
@@ -404,12 +410,16 @@ async def run_websocket_server(host: str, port: int, config_path: Optional[str] 
     
     try:
         # Start WebSocket server
+        # Use longer ping timeout to prevent disconnects during heavy processing (LLM, TTS)
+        # ping_interval=30 means the server sends a ping every 30 seconds
+        # ping_timeout=60 gives the client 60 seconds to respond (accounts for heavy processing)
         server = await websockets.serve(
             handle_client,
             host,
             port,
             ping_interval=30,
-            ping_timeout=10
+            ping_timeout=60,
+            close_timeout=10
         )
         
         logger.info(f"Voice Computer Server started on ws://{host}:{port}")

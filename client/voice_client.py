@@ -94,86 +94,138 @@ class AudioStreamer:
 
 class VoiceComputerClient:
     """Client that connects to a remote voice computer server."""
-    
+
     def __init__(self, server_uri: str = "ws://localhost:8765", auto_reconnect: bool = True, reconnect_interval: float = 60.0):
         self.server_uri = server_uri
         self.websocket = None
         self.connected = False
         self.auto_reconnect = auto_reconnect
         self.reconnect_interval = reconnect_interval
-        
+
         # Audio components
         self.audio_streamer = AudioStreamer()
-        
+
         # State
         self.streaming_audio = False
         self.processing = False
         self.conversation_active = False
         self.shutdown_requested = False
-        
+
         # Audio streaming task
         self.streaming_task = None
-        
+
         # Reconnection task
         self.reconnect_task = None
+
+        # Message handler task (track to clean up on reconnect)
+        self.message_handler_task = None
         
     async def connect(self):
         """Connect to the voice computer server."""
         try:
+            # Clean up any existing connection first
+            await self._cleanup_old_connection()
+
             _logger.info(f"Connecting to {self.server_uri}")
-            self.websocket = await websockets.connect(self.server_uri)
+            # Use ping settings that match server (ping_interval=30, ping_timeout=60)
+            # This prevents premature disconnects during heavy processing
+            self.websocket = await websockets.connect(
+                self.server_uri,
+                ping_interval=30,
+                ping_timeout=60,
+                close_timeout=10
+            )
             self.connected = True
             _logger.info("Connected to voice computer server")
-            
+
             # Start message handler
-            asyncio.create_task(self._message_handler())
-            
+            self.message_handler_task = asyncio.create_task(self._message_handler())
+
         except Exception as e:
             _logger.error(f"Failed to connect to server: {e}")
             raise
+
+    async def _cleanup_old_connection(self):
+        """Clean up any existing connection state before reconnecting."""
+        # Cancel old message handler task if it exists
+        if self.message_handler_task and not self.message_handler_task.done():
+            self.message_handler_task.cancel()
+            try:
+                await self.message_handler_task
+            except asyncio.CancelledError:
+                pass
+            self.message_handler_task = None
+
+        # Close old websocket if it exists
+        if self.websocket:
+            try:
+                await self.websocket.close()
+            except Exception as e:
+                _logger.debug(f"Error closing old websocket: {e}")
+            self.websocket = None
+
+        self.connected = False
             
     async def _attempt_reconnect(self):
         """Attempt to reconnect to the server with retry logic."""
         if not self.auto_reconnect or self.shutdown_requested:
             return
-            
+
+        # Stop audio streaming before reconnection attempts
+        was_streaming = self.streaming_audio
+        if self.streaming_audio:
+            self.streaming_audio = False
+            self.audio_streamer.stop_streaming()
+            if self.streaming_task:
+                self.streaming_task.cancel()
+                try:
+                    await self.streaming_task
+                except asyncio.CancelledError:
+                    pass
+                self.streaming_task = None
+
         reconnect_attempt = 1
-        _logger.info(f"🔄 Starting auto-reconnection process (interval: {self.reconnect_interval}s)")
+        max_interval = 60.0  # Cap the interval at 60 seconds
+        current_interval = min(5.0, self.reconnect_interval)  # Start with 5s or less
+
+        _logger.info(f"🔄 Starting auto-reconnection process")
         print(f"🔄 Connection lost - attempting to reconnect...")
-        
+
         while not self.connected and not self.shutdown_requested:
             try:
                 _logger.info(f"🔄 Reconnection attempt #{reconnect_attempt} to {self.server_uri}")
                 print(f"🔄 Reconnection attempt #{reconnect_attempt}...")
-                
+
                 await self.connect()
-                
+
                 _logger.info("✅ Successfully reconnected to server")
                 print(f"✅ Reconnected successfully after {reconnect_attempt} attempt(s)")
-                
+
                 # If we were streaming audio before disconnection, resume it
-                if self.conversation_active:
+                if was_streaming or self.conversation_active:
                     await self.start_audio_streaming()
                     _logger.info("🎤 Resumed audio streaming after reconnection")
                     print("🎤 Audio streaming resumed")
-                
+
                 break
-                
+
             except Exception as e:
                 _logger.warning(f"❌ Reconnection attempt #{reconnect_attempt} failed: {e}")
                 print(f"❌ Reconnection attempt #{reconnect_attempt} failed: {e}")
-                
+
                 if not self.shutdown_requested:
-                    _logger.info(f"⏳ Waiting {self.reconnect_interval} seconds before next attempt")
-                    print(f"⏳ Waiting {self.reconnect_interval} seconds before next attempt...")
-                    await asyncio.sleep(self.reconnect_interval)
+                    _logger.info(f"⏳ Waiting {current_interval:.1f} seconds before next attempt")
+                    print(f"⏳ Waiting {current_interval:.1f} seconds before next attempt...")
+                    await asyncio.sleep(current_interval)
                     reconnect_attempt += 1
+                    # Exponential backoff with cap
+                    current_interval = min(current_interval * 1.5, max_interval)
             
     async def disconnect(self):
         """Disconnect from the server."""
         self.shutdown_requested = True
         await self.stop_audio_streaming()
-        
+
         # Cancel reconnection task if running
         if self.reconnect_task and not self.reconnect_task.done():
             self.reconnect_task.cancel()
@@ -181,9 +233,20 @@ class VoiceComputerClient:
                 await self.reconnect_task
             except asyncio.CancelledError:
                 pass
-                
+
+        # Cancel message handler task if running
+        if self.message_handler_task and not self.message_handler_task.done():
+            self.message_handler_task.cancel()
+            try:
+                await self.message_handler_task
+            except asyncio.CancelledError:
+                pass
+
         if self.websocket:
-            await self.websocket.close()
+            try:
+                await self.websocket.close()
+            except Exception as e:
+                _logger.debug(f"Error closing websocket: {e}")
         self.connected = False
         self.audio_streamer.cleanup()
         _logger.info("Disconnected from server")
