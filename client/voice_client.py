@@ -18,6 +18,8 @@ import base64
 import numpy as np
 from typing import Optional, Dict, Any
 import time
+import sys
+import os
 
 _logger = logging.getLogger(__name__)
 
@@ -178,7 +180,18 @@ class VoiceComputerClient:
             self.websocket = None
 
         self.connected = False
-            
+
+    def _restart_process(self):
+        """Restart the entire process - equivalent to manual stop and restart."""
+        _logger.info("Restarting process with os.execv...")
+        # Cleanup audio resources before restart
+        try:
+            self.audio_streamer.cleanup()
+        except Exception as e:
+            _logger.debug(f"Error cleaning up audio: {e}")
+        # Replace current process with a fresh one
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+
     async def _attempt_reconnect(self):
         """Attempt to reconnect to the server with retry logic."""
         if not self.auto_reconnect or self.shutdown_requested:
@@ -228,6 +241,13 @@ class VoiceComputerClient:
             except Exception as e:
                 _logger.warning(f"❌ Reconnection attempt #{reconnect_attempt} failed: {e}")
                 print(f"❌ Reconnection attempt #{reconnect_attempt} failed: {e}")
+
+                # After 3 failed attempts, do a full process restart
+                if reconnect_attempt >= 3:
+                    _logger.info("🔄 Reconnection failed 3 times - performing full process restart...")
+                    print("🔄 Reconnection failed 3 times - restarting client...")
+                    await asyncio.sleep(1.0)  # Brief pause before restart
+                    self._restart_process()
 
                 if not self.shutdown_requested:
                     _logger.info(f"⏳ Waiting {current_interval:.1f} seconds before next attempt")
