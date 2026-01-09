@@ -127,13 +127,15 @@ class VoiceComputerClient:
             await self._cleanup_old_connection()
 
             _logger.info(f"Connecting to {self.server_uri}")
-            # Use ping settings that match server (ping_interval=30, ping_timeout=60)
-            # This prevents premature disconnects during heavy processing
+            # Use ping settings that match server (ping_interval=60, ping_timeout=120)
+            # This prevents premature disconnects during SSH tunnel latency + heavy processing
+            # open_timeout=30 gives more time for handshake over SSH tunnels
             self.websocket = await websockets.connect(
                 self.server_uri,
-                ping_interval=30,
-                ping_timeout=60,
-                close_timeout=10
+                ping_interval=60,
+                ping_timeout=120,
+                close_timeout=10,
+                open_timeout=30
             )
             self.connected = True
             _logger.info("Connected to voice computer server")
@@ -156,12 +158,23 @@ class VoiceComputerClient:
                 pass
             self.message_handler_task = None
 
-        # Close old websocket if it exists
+        # Force close old websocket if it exists - use abort() for unclean but immediate close
         if self.websocket:
             try:
-                await self.websocket.close()
+                # First try graceful close with short timeout
+                await asyncio.wait_for(self.websocket.close(), timeout=2.0)
+            except asyncio.TimeoutError:
+                _logger.debug("Graceful close timed out, forcing abort")
             except Exception as e:
                 _logger.debug(f"Error closing old websocket: {e}")
+
+            # Force abort the underlying transport if still open
+            try:
+                if self.websocket.transport and not self.websocket.transport.is_closing():
+                    self.websocket.transport.abort()
+            except Exception as e:
+                _logger.debug(f"Error aborting transport: {e}")
+
             self.websocket = None
 
         self.connected = False
@@ -190,6 +203,9 @@ class VoiceComputerClient:
 
         _logger.info(f"🔄 Starting auto-reconnection process")
         print(f"🔄 Connection lost - attempting to reconnect...")
+
+        # Small delay before first attempt to let tunnel/sockets settle
+        await asyncio.sleep(2.0)
 
         while not self.connected and not self.shutdown_requested:
             try:

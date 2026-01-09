@@ -412,13 +412,13 @@ async def run_websocket_server(host: str, port: int, config_path: Optional[str] 
         # Start WebSocket server
         # Use longer ping timeout to prevent disconnects during heavy processing (LLM, TTS)
         # ping_interval=30 means the server sends a ping every 30 seconds
-        # ping_timeout=60 gives the client 60 seconds to respond (accounts for heavy processing)
+        # ping_timeout=120 gives the client 120 seconds to respond (accounts for SSH tunnel latency + heavy processing)
         server = await websockets.serve(
             handle_client,
             host,
             port,
-            ping_interval=30,
-            ping_timeout=60,
+            ping_interval=60,
+            ping_timeout=120,
             close_timeout=10
         )
         
