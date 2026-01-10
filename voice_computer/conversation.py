@@ -172,7 +172,10 @@ class Conversation:
             self.tts_speaker = None
             self.sound_speaker = None
             self.server_mode = False
-        
+
+        # Quiet mode - suppress greeting messages (can be set by server)
+        self.quiet_mode = False
+
         # Initialize MCP tools and handler
         self.mcp_tools = []
         self.tool_handler = None
@@ -765,7 +768,7 @@ class Conversation:
         
         await self._setup_mcp_tools()
         self.voice_interface.activate()
-        if self.tts_speaker:
+        if self.tts_speaker and not getattr(self, 'quiet_mode', False):
             activation_text = "Please say the activation word to start the conversation."
             self.tts_speaker.speak(activation_text)
             _logger.info(activation_text)
