@@ -97,12 +97,13 @@ class AudioStreamer:
 class VoiceComputerClient:
     """Client that connects to a remote voice computer server."""
 
-    def __init__(self, server_uri: str = "ws://localhost:8765", auto_reconnect: bool = True, reconnect_interval: float = 60.0):
+    def __init__(self, server_uri: str = "ws://localhost:8765", auto_reconnect: bool = True, reconnect_interval: float = 60.0, quiet: bool = False):
         self.server_uri = server_uri
         self.websocket = None
         self.connected = False
         self.auto_reconnect = auto_reconnect
         self.reconnect_interval = reconnect_interval
+        self.quiet = quiet
 
         # Audio components
         self.audio_streamer = AudioStreamer()
@@ -141,6 +142,12 @@ class VoiceComputerClient:
             )
             self.connected = True
             _logger.info("Connected to voice computer server")
+
+            # Send preferences to server (must be first message before server sends greeting)
+            await self.websocket.send(json.dumps({
+                "type": "set_preferences",
+                "quiet": self.quiet
+            }))
 
             # Start message handler
             self.message_handler_task = asyncio.create_task(self._message_handler())
@@ -300,21 +307,15 @@ class VoiceComputerClient:
                     # Continue to next message instead of crashing
                     continue
         except websockets.exceptions.ConnectionClosed:
-            _logger.info("🔌 Server connection closed")
-            print("🔌 Connection to server lost")
+            _logger.info("🔌 Server connection closed - exiting")
+            print("🔌 Connection to server lost - exiting")
             self.connected = False
-            # Trigger reconnection if not shutting down
-            if not self.shutdown_requested and self.auto_reconnect:
-                _logger.info("🔄 Connection lost - starting reconnection process")
-                self.reconnect_task = asyncio.create_task(self._attempt_reconnect())
+            os._exit(1)
         except Exception as e:
             _logger.error(f"💥 Error in message handler: {e}")
-            print(f"💥 Connection error: {e}")
+            print(f"💥 Connection error: {e} - exiting")
             self.connected = False
-            # Trigger reconnection if not shutting down
-            if not self.shutdown_requested and self.auto_reconnect:
-                _logger.info("🔄 Connection error - starting reconnection process")
-                self.reconnect_task = asyncio.create_task(self._attempt_reconnect())
+            os._exit(1)
             
     async def _process_server_message(self, data: Dict[str, Any]):
         """Process a message from the server."""
@@ -691,6 +692,7 @@ async def main():
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
     parser.add_argument("--no-reconnect", action="store_true", help="Disable auto-reconnection")
     parser.add_argument("--reconnect-interval", type=float, default=60.0, help="Reconnection interval in seconds (default: 60)")
+    parser.add_argument("--quiet", "-q", action="store_true", help="Suppress initial greeting messages")
     
     args = parser.parse_args()
     
@@ -706,7 +708,8 @@ async def main():
     client = VoiceComputerClient(
         server_uri=args.server,
         auto_reconnect=not args.no_reconnect,
-        reconnect_interval=args.reconnect_interval
+        reconnect_interval=args.reconnect_interval,
+        quiet=args.quiet
     )
     
     try:

@@ -289,6 +289,19 @@ async def run_websocket_server(host: str, port: int, config_path: Optional[str] 
         logger.info(f"🔧 Client {client_id} initialized with fresh session and shared MCP tools")
         
         try:
+            # Wait for client preferences (first message)
+            quiet_mode = False
+            try:
+                first_msg = await asyncio.wait_for(websocket.recv(), timeout=5.0)
+                prefs = json.loads(first_msg)
+                if prefs.get("type") == "set_preferences":
+                    quiet_mode = prefs.get("quiet", False)
+                    logger.info(f"Client {client_id} preferences: quiet={quiet_mode}")
+            except asyncio.TimeoutError:
+                logger.debug(f"No preferences received from {client_id}, using defaults")
+            except Exception as e:
+                logger.debug(f"Error reading preferences from {client_id}: {e}")
+
             # Send welcome message
             await message_queue.put({
                 "type": "welcome",
@@ -298,23 +311,27 @@ async def run_websocket_server(host: str, port: int, config_path: Optional[str] 
                     "available_tools": handler.get_available_tool_names()
                 }
             })
-            
-            # Test TTS by sending a connection sound
-            connection_message = "Initializing. Please wait."
-            logger.info(f"Sending connection test TTS: {connection_message}")
-            
-            # Send the text response first
-            await message_queue.put({
-                "type": "text_response",
-                "text": connection_message
-            })
-            
-            # Generate and send TTS audio
-            try:
-                tts_speaker.speak(connection_message)
-                logger.info("Connection TTS initiated successfully")
-            except Exception as e:
-                logger.error(f"Error generating connection TTS: {e}")
+
+            # Send greeting TTS unless quiet mode
+            if not quiet_mode:
+                connection_message = "Initializing. Please wait."
+                logger.info(f"Sending connection test TTS: {connection_message}")
+
+                # Send the text response first
+                await message_queue.put({
+                    "type": "text_response",
+                    "text": connection_message
+                })
+
+                # Generate and send TTS audio
+                try:
+                    tts_speaker.speak(connection_message)
+                    logger.info("Connection TTS initiated successfully")
+                except Exception as e:
+                    logger.error(f"Error generating connection TTS: {e}")
+
+            # Store quiet mode for later use
+            handler.quiet_mode = quiet_mode
             
             # Create WebSocket message handler for the voice listener
             async def websocket_message_handler():
